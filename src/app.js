@@ -200,8 +200,20 @@ async function enter(u){
   catch(e){console.error(e);me=null;phase='auth';authView='login';toast('Entramos na conta, mas não foi possível carregar os dados. Tente de novo.')}
   clearTimeout(timer);slow=false;render();
 }
-const AUTH_ERR=[[/invalid (email or )?password|invalid credentials|user not found/i,'E-mail ou senha incorretos.'],[/already exists|already registered/i,'Já existe uma conta com este e-mail. Entre ou recupere a senha.'],[/password.*(short|least|8)/i,'A senha precisa ter pelo menos 8 caracteres.'],[/invalid email/i,'Informe um e-mail válido.'],[/token/i,'O link de recuperação expirou. Peça um novo.'],[/not verified/i,'Confirme seu e-mail pelo link que enviamos antes de entrar.']];
-const authErr=e=>{const m=String((e&&e.message)||e||'');for(const [r,t] of AUTH_ERR)if(r.test(m))return t;return 'Não foi possível concluir agora. Verifique a conexão e tente de novo.'};
+const AUTH_ERR=[
+ [/INVALID_EMAIL_OR_PASSWORD|invalid (email or )?password|invalid credentials|user not found/i,'E-mail ou senha incorretos.'],
+ [/USER_ALREADY_EXISTS|already exists|already registered/i,'Já existe uma conta com este e-mail. Entre ou recupere a senha.'],
+ [/PASSWORD_TOO_LONG|too long/i,'A senha é longa demais. Use até 128 caracteres.'],
+ [/PASSWORD_TOO_SHORT|password.*(short|least)/i,'A senha precisa ter pelo menos 8 caracteres.'],
+ [/security requirements|compromised|pwned|breach|weak/i,'Esta senha é fraca ou já apareceu em vazamentos. Use outra, com letras, números e símbolos.'],
+ [/INVALID_EMAIL|invalid email/i,'Informe um e-mail válido.'],
+ [/EMAIL_NOT_VERIFIED|not verified/i,'Confirme seu e-mail pelo código ou link que enviamos antes de entrar.'],
+ [/INVALID_TOKEN|token/i,'O link de recuperação expirou. Peça um novo.'],
+ [/too many|rate limit|429/i,'Muitas tentativas seguidas. Aguarde um minuto e tente de novo.'],
+ [/failed to fetch|network|load failed/i,'Sem conexão com o servidor. Verifique a internet e tente de novo.']];
+const authErr=e=>{const m=[e&&e.code,e&&e.message,e&&e.error&&e.error.message,e&&e.statusText,String(e||'')].filter(Boolean).join(' ');for(const [r,t] of AUTH_ERR)if(r.test(m))return t;return 'Não foi possível concluir agora. Tente de novo em instantes.'};
+async function sessionUser(){try{const r=await neon.auth.getSession();return r&&r.data&&(r.data.user||(r.data.session&&r.data.session.user))||null}catch(e){return null}}
+async function authCall(fn){let r;try{r=await fn()}catch(e){r={error:e}}if(r&&r.error)throw r.error;return r||{}}
 
 /* ---------- render ---------- */
 let raf=0;
@@ -273,13 +285,17 @@ async function authSubmit(f){
   if(authView==='cadastro'&&!v.name){msg('Informe seu nome.');return}
   b.disabled=true;
   try{
-    if(authView==='login'){const r=await neon.auth.signIn.email({email:v.email,password:v.password});if(r.error)throw r.error;await enter(r.data.user)}
-    else if(authView==='cadastro'){const r=await neon.auth.signUp.email({email:v.email,password:v.password,name:v.name});if(r.error)throw r.error;
-      if(!r.data||!r.data.user||r.data.token===null){authView='login';render();toast('Conta criada. Confirme seu e-mail e entre.');return}
-      await enter(r.data.user);if(me&&v.company&&!D.settings.company)putSettings({...D.settings,company:v.company}).catch(()=>{})}
-    else if(authView==='recuperar'){const r=await neon.auth.requestPasswordReset({email:v.email,redirectTo:location.origin+'/'});if(r&&r.error)throw r.error;ok('Se existir uma conta com este e-mail, o link de recuperação foi enviado. Confira também a caixa de spam.')}
-    else{const r=await neon.auth.resetPassword({newPassword:v.password,token:resetToken});if(r&&r.error)throw r.error;resetToken='';history.replaceState(null,'',location.pathname);authView='login';render();toast('Senha alterada. Entre com a nova senha.')}
-  }catch(e){console.warn(e);msg(authErr(e))}
+    if(authView==='login'){
+      let u;try{const r=await authCall(()=>neon.auth.signIn.email({email:v.email,password:v.password}));u=r.data&&r.data.user}catch(e){u=await sessionUser();if(!u)throw e}
+      u=u||await sessionUser();if(!u)throw new Error('sem sessão');await enter(u)}
+    else if(authView==='cadastro'){
+      let u;try{const r=await authCall(()=>neon.auth.signUp.email({email:v.email,password:v.password,name:v.name}));u=r.data&&r.data.user}catch(e){u=await sessionUser();if(!u)throw e}
+      u=await sessionUser()||null;
+      if(!u){authView='login';render();toast('Conta criada. Entre com seu e-mail e senha.');return}
+      await enter(u);if(me&&v.company&&!D.settings.company)putSettings({...D.settings,company:v.company}).catch(()=>{})}
+    else if(authView==='recuperar'){await authCall(()=>neon.auth.requestPasswordReset({email:v.email,redirectTo:location.origin+'/'}));ok('Se existir uma conta com este e-mail, o link de recuperação foi enviado. Confira também a caixa de spam.')}
+    else{await authCall(()=>neon.auth.resetPassword({newPassword:v.password,token:resetToken}));resetToken='';history.replaceState(null,'',location.pathname);authView='login';render();toast('Senha alterada. Entre com a nova senha.')}
+  }catch(e){console.warn('auth',e&&e.code,e&&e.message);msg(authErr(e))}
   if(b.isConnected)b.disabled=false;
 }
 
