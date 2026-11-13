@@ -230,7 +230,7 @@ function render(){
   $('#side').innerHTML=`<div class="brand"><i></i>OBRA&nbsp;<span>CONTROL</span></div>
    <button class="btn primary big" data-act="new-expense" data-w>${ic('plus')} NOVA DESPESA</button>
    <nav class="nav">${NAV.map(([k,l,i])=>k[0]==='@'?`<button data-act="${k.slice(1)}" data-w>${ic(i)}${l}</button>`:`<a href="#${k}"${on(k)}>${ic(i)}${l}</a>`).join('')}</nav>
-   <div class="foot">${esc(D.settings.company||'')}${isDemo()?'<br>Modo demonstração':''}${me?`<div class="who">${esc(me.email||'')}</div><button class="btn ghost" style="padding:4px 0;min-height:0" data-act="logout">Sair da conta</button>`:''}</div>`;
+   ${standalone()?'':`<button class="btn" data-act="install" style="margin:0 6px">${ic('down')} Instalar aplicativo</button>`}<div class="foot">${esc(D.settings.company||'')}${isDemo()?'<br>Modo demonstração':''}${me?`<div class="who">${esc(me.email||'')}</div><button class="btn ghost" style="padding:4px 0;min-height:0" data-act="logout">Sair da conta</button>`:''}</div>`;
   $('#bnav').innerHTML=`<a href="#dashboard"${on('dashboard')}>${ic('home')}Início</a><a href="#obras"${on('obras')}>${ic('build')}Obras</a><button class="plus" data-act="new-expense" data-w aria-label="Nova despesa">${ic('plus')}</button><a href="#despesas"${on('despesas')}>${ic('coin')}Despesas</a><button data-act="more">${ic('more')}Mais</button>`;
   $('#topinfo').textContent=isDemo()?'Demonstração':(D.settings.company||'');
   charts.forEach(c=>c.destroy());charts=[];
@@ -440,6 +440,7 @@ function vConf(){
   return `<div class="head"><div><h1>Configurações</h1></div></div>
   <div class="grid g2">
    <div class="card"><h2>Empresa</h2><form data-form="company" class="row"><input type="text" id="company" name="company" placeholder="Nome da empresa" value="${esc(D.settings.company||'')}" style="flex:1;min-width:180px"><button class="btn dark" data-w>Salvar</button></form><p class="small muted" style="margin-top:10px">Aparece no menu e no cabeçalho dos relatórios.</p></div>
+   <div class="card"><h2>Aplicativo</h2><p class="ink2 small" style="margin-bottom:12px">${standalone()?'Você está usando o aplicativo instalado.':'Instale o OBRA CONTROL no celular ou no computador. Ele abre em tela própria, com ícone, e usa a mesma conta e os mesmos dados.'}</p>${standalone()?'':`<button class="btn dark" data-act="install">${ic('down')} Instalar aplicativo</button>`}</div>
    <div class="card"><h2>Demonstração</h2><p class="ink2 small" style="margin-bottom:12px">Carrega obras fictícias para conhecer o aplicativo. Os dados de demonstração ficam só na tela, nunca se misturam com os seus e somem ao sair.</p>${isDemo()?`<button class="btn" data-act="demo-off">Sair da demonstração</button>`:`<button class="btn" data-act="demo-on">Abrir modo demonstração</button>`}</div>
    <div class="card"><h2>Categorias de despesa</h2><div class="chips" style="margin-bottom:12px">${CATS.map(c=>`<span class="pill">${esc(c)}</span>`).join('')}${custom.map(c=>`<span class="pill s-andamento">${esc(c)} <button class="icb" style="padding:0" data-act="del-cat" data-id="${esc(c)}" data-w aria-label="Remover ${esc(c)}">${ic('x')}</button></span>`).join('')}</div>
     <form data-form="cat" class="row" data-w><input type="text" id="newcat" name="cat" placeholder="Nova categoria" style="flex:1;min-width:160px" maxlength="40"><button class="btn dark">Adicionar</button></form></div>
@@ -804,7 +805,7 @@ const ACT={
   'ftog':(id,el)=>{FOPEN=!FOPEN;el.closest('.filters').classList.toggle('open',FOPEN)},
   'demo-on':()=>{DEMO=demoData();D=DEMO;location.hash='dashboard';render()},
   'demo-off':()=>{D=LIVE;DEMO=null;location.hash='dashboard';render()},
-  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
+  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
   'new-client':()=>formClient(),'edit-client':id=>formClient(id),
   'del-client':id=>{const c=cli(id);if(D.projects.some(p=>p.client_id===id)){modal({title:'Cliente com obras',body:'<p class="ink2">Este cliente tem obras cadastradas e não pode ser excluído.</p>',cancel:'Entendi'});return}
     confirmBox('Excluir cliente',c.name,'Excluir',async()=>{await del('clients',id)})},
@@ -856,4 +857,20 @@ document.addEventListener('submit',async e=>{
 });
 addEventListener('hashchange',()=>{$('#main').scrollTop=0;render()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me&&!isDemo()&&M.hidden&&Date.now()-lastLoad>30000)loadAll().then(schedule).catch(()=>{})});
+/* ---------- aplicativo instalável ---------- */
+let installEvt=null;
+const standalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;schedule()});
+addEventListener('appinstalled',()=>{installEvt=null;toast('Aplicativo instalado.');schedule()});
+if('serviceWorker' in navigator&&location.protocol==='https:')addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+async function installApp(){
+  if(installEvt){installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;schedule();return}
+  const ios=isIOS();
+  modal({title:'Instalar o aplicativo',cancel:'Fechar',body:ios
+    ?`<p class="ink2">No iPhone ou iPad, abra este endereço no <b>Safari</b> e:</p><ol class="ink2" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px"><li>Toque em <b>Compartilhar</b> (o quadrado com a seta para cima).</li><li>Escolha <b>Adicionar à Tela de Início</b>.</li><li>Toque em <b>Adicionar</b>.</li></ol>`
+    :`<p class="ink2">No Android, abra este endereço no <b>Chrome</b>, toque no menu <b>⋮</b> e escolha <b>Instalar app</b> (ou <b>Adicionar à tela inicial</b>).</p><p class="ink2">No computador, use o ícone de instalar na barra de endereço do Chrome ou do Edge.</p>`});
+}
+ACT['install']=installApp;
+
 init();
