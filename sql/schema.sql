@@ -46,3 +46,12 @@ create policy own_rows on public.audit_log for all to authenticated using ((sele
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.clients, public.projects, public.expenses, public.receipts, public.project_events, public.project_documents, public.audit_log, public.settings to authenticated;
+
+-- Link público de acompanhamento do cliente (sem login, sem valores financeiros)
+alter table public.projects add column if not exists share_token text;
+create unique index if not exists projects_share_token_key on public.projects(share_token) where share_token is not null;
+-- public.client_view(p_token text) returns jsonb  (security definer; ver função no banco)
+-- Devolve só dados de andamento, prazos, eventos, cliente (nome/documento) e empresa. Nunca valores.
+revoke all on function public.client_view(text) from public;
+grant usage on schema public to anonymous;
+grant execute on function public.client_view(text) to anonymous, authenticated;
