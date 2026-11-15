@@ -622,7 +622,9 @@ function vPublic(){
 }
 async function loadPublic(token){
   try{
-    const r=await fetch(`${DATA_URL}/rpc/client_view`,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({p_token:token})});
+    const AUTH_URL=DATA_URL.replace('.apirest.','.neonauth.').replace(/\/rest\/v1$/,'/auth');
+    const tk=await fetch(`${AUTH_URL}/token/anonymous`).then(r=>r.ok?r.json():null).catch(()=>null);
+    const r=await fetch(`${DATA_URL}/rpc/client_view`,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json',...(tk&&tk.token?{Authorization:'Bearer '+tk.token}:{})},body:JSON.stringify({p_token:token})});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const j=await r.json();
     if(!j||!j.project){pubErr='Este link não existe mais ou foi desativado. Peça um novo link à empresa responsável pela obra.'}else{PUB=j;document.title=(j.project.name||'Obra')+' · Acompanhamento'}
