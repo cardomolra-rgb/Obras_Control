@@ -22,6 +22,12 @@ const sum=(a,f=x=>x)=>a.reduce((s,x)=>s+(Number(f(x))||0),0);
 const days=n=>n==null?'—':n+(Math.abs(n)===1?' dia':' dias');
 const fts=ts=>{const d=new Date(ts);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes())};
 const I={
+ bank:'<path d="M3 9l9-5 9 5M5 9v9M19 9v9M9 9v9M15 9v9M3 20h18"/>',
+ upload:'<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
+ split:'<path d="M6 3v6a6 6 0 0 0 6 6 6 6 0 0 1 6 6M18 3v6"/>',
+ link:'<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+ bolt:'<path d="M13 3 5 13h6l-1 8 8-10h-6z"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
  build:'<path d="M4 21V7l8-4 8 4v14"/><path d="M9 21v-5h6v5M9 10h.01M15 10h.01M9 13h.01M15 13h.01"/>',
  plus:'<path d="M12 5v14M5 12h14"/>',
@@ -63,7 +69,7 @@ const shareUrl=t=>`${location.origin}/acompanhar/${t}`;
 function newToken(){const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789',b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>a[x%a.length]).join('')}
 let PUB=null,pubErr='';
 const COLS=['clients','projects','expenses','receipts','events','documents','audit'];
-const blank=()=>({clients:[],projects:[],expenses:[],receipts:[],events:[],documents:[],audit:[],settings:{company:'',categories:[]}});
+const blank=()=>({clients:[],projects:[],expenses:[],receipts:[],events:[],documents:[],audit:[],accounts:[],transactions:[],rules:[],settings:{company:'',categories:[]}});
 
 let db=null,user=null,assets=null,downloads=true,myId=null,myName='';
 let me=null,authView='login',resetToken='',lastLoad=0;
@@ -72,7 +78,7 @@ const LIVE=blank();let DEMO=null;let D=LIVE;
 let phase='loading'; // loading | db | local
 let slow=false, tab='resumo', lastObra=null;
 const F={q:'',project:'',cat:'',supplier:'',from:'',to:''};
-const PF={q:'',status:''};
+const PF={q:'',status:'',kind:''};
 let charts=[],FOPEN=false;
 
 const allCats=()=>CATS.concat((D.settings.categories||[]).filter(c=>!CATS.includes(c)));
@@ -82,16 +88,28 @@ const isDemo=()=>D===DEMO;
 const memory=()=>isDemo()||!me;
 const clean=o=>JSON.parse(JSON.stringify(o));
 
-const TABLE={clients:'clients',projects:'projects',expenses:'expenses',receipts:'receipts',events:'project_events',documents:'project_documents',audit:'audit_log'};
+const TABLE={clients:'clients',projects:'projects',expenses:'expenses',receipts:'receipts',events:'project_events',documents:'project_documents',audit:'audit_log',accounts:'bank_accounts',transactions:'bank_transactions',rules:'finance_rules'};
 function localPut(col,obj){const a=D[col],i=a.findIndex(x=>x.id===obj.id);if(i>=0)a[i]=obj;else a.push(obj);schedule()}
 async function put(col,obj){
   if(memory()){localPut(col,obj);return}
   const o=clean(obj),row={id:o.id,data:o};
   if(col==='projects'){row.client_id=o.client_id||null;row.share_token=o.share_token||null}
-  else if(col!=='clients')row.project_id=o.project_id||null;
+  else if(col==='transactions'){row.account_id=o.account_id;row.fitid=o.fitid||null}
+  else if(col==='accounts'||col==='rules'){}
+  else if(!['clients','accounts','rules','transactions'].includes(col))row.project_id=o.project_id||null;
   const {error}=await neon.from(TABLE[col]).upsert(row);
   if(error)throw error;
   localPut(col,o);
+}
+async function putMany(col,objs){
+  if(!objs.length)return;
+  if(memory()){objs.forEach(o=>localPut(col,o));return}
+  for(let i=0;i<objs.length;i+=200){
+    const part=objs.slice(i,i+200).map(o=>{const c=clean(o),row={id:c.id,data:c};if(col==='transactions'){row.account_id=c.account_id;row.fitid=c.fitid||null}return row});
+    const {error}=await neon.from(TABLE[col]).upsert(part,{onConflict:'id',ignoreDuplicates:true});
+    if(error)throw error;
+    objs.slice(i,i+200).forEach(o=>localPut(col,clean(o)));
+  }
 }
 async function del(col,id){
   if(!memory()){const {error}=await neon.from(TABLE[col]).delete().eq('id',id);if(error)throw error}
@@ -168,10 +186,12 @@ function totals(){
     avgMargin:margins.length?sum(margins)/margins.length:null,
     n:ps.length,running:ps.filter(x=>x.p.status==='andamento').length,done:ps.filter(x=>x.c.done).length,late:ps.filter(x=>x.c.late).length};
 }
-function nextCode(){
-  const y=new Date().getFullYear();
-  const n=Math.max(0,...D.projects.map(p=>{const m=/^OBR-(\d{4})-(\d+)$/.exec(p.code||'');return m&&+m[1]===y?+m[2]:0}))+1;
-  return `OBR-${y}-${String(n).padStart(3,'0')}`;
+const KIND={obra:{n:'Obra',pl:'Obras',pre:'OBR',novo:'Nova obra'},servico:{n:'Serviço',pl:'Serviços',pre:'SRV',novo:'Novo serviço'},venda:{n:'Venda',pl:'Vendas',pre:'VND',novo:'Nova venda'}};
+const kindOf=p=>(p&&KIND[p.kind])?p.kind:'obra';
+function nextCode(kind='obra'){
+  const y=new Date().getFullYear(),pre=KIND[kind].pre,re=new RegExp('^'+pre+'-(\\d{4})-(\\d+)$');
+  const n=Math.max(0,...D.projects.map(p=>{const m=re.exec(p.code||'');return m&&+m[1]===y?+m[2]:0}))+1;
+  return `${pre}-${y}-${String(n).padStart(3,'0')}`;
 }
 
 /* ---------- dados de demonstração (só em memória) ---------- */
@@ -192,6 +212,15 @@ function demoData(){
   d.receipts=[['pd1',-58,144000,'Entrada de 30%'],['pd1',-20,120000,'2ª medição'],['pd2',-90,79500,'Entrada de 30%'],['pd2',-40,92750,'Medição intermediária'],['pd3',-198,42600,'Entrada'],['pd3',-150,56800,'Medição'],['pd3',-110,42600,'Saldo final']].map(([project_id,o,amount,description],i)=>({id:'rd'+i,project_id,date:at(o),amount,description,method:'Pix',created_at:Date.now()+o*864e5}));
   d.events=[{id:'vd1',project_id:'pd2',type:'pause',start:at(-52),end:at(-38),reason:'Atraso na entrega do cubículo'},{id:'vd2',project_id:'pd1',type:'note',date:at(-45),text:'Locação dos postes concluída'},{id:'vd3',project_id:'pd2',type:'note',date:at(-30),text:'Vistoria da concessionária agendada'}];
   d.audit=d.expenses.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6).map((e,i)=>({id:'ad'+i,ts:Date.now()-i*36e5*7,by:null,entity:'despesa',action:'criou',project_id:e.project_id,text:`Despesa lançada: ${e.description} (${money(e.amount)})`}));
+  const y2=new Date().getFullYear();
+  d.projects.push({id:'pd5',kind:'servico',code:`SRV-${y2}-001`,name:'Manutenção de quadro elétrico',client_id:'c2',status:'andamento',contract_value:2400,planned_cost:700,real_start:at(-6),progress:0,color:'azul',created_at:Date.now()-5},{id:'pd6',kind:'venda',code:`VND-${y2}-001`,name:'Kit padrão de entrada',client_id:'c3',status:'aprovada',contract_value:5300,planned_cost:2850,real_start:at(-9),progress:0,color:'petroleo',created_at:Date.now()-6});
+  d.expenses.push({id:'edx1',project_id:'pd1',date:at(-2),category:'Cabos e condutores',description:'Cabo CA 1/0 AWG, complemento',amount:5000,supplier:'Condutores Brasil',payment:'Pix',responsible:'Responsável de exemplo',status:'ativa',attachments:[],created_at:Date.now()-1});
+  d.receipts.push({id:'rdx1',project_id:'pd5',date:at(-3),amount:2400,description:'Serviço concluído',method:'Pix',created_at:Date.now()},{id:'rdx2',project_id:'pd6',date:at(-8),amount:5300,description:'Venda à vista',method:'Pix',created_at:Date.now()});
+  d.accounts=[{id:'accd1',key:'demo',bank:'001',acctid:'12345-6',name:'Conta PJ principal',balance:61904.12,balance_date:at(-1),last_import:Date.now()}];
+  d.rules=[{id:'rd1',match:'ENERGISA',kind:'empresa',center:'Administrativo',category:'Energia e água'},{id:'rd2',match:'ALUGUEL GALPAO',kind:'empresa',center:'Administrativo',category:'Aluguel'},{id:'rd3',match:'FOLHA PAGAMENTO',kind:'empresa',center:'Pessoal',category:'Salários e encargos'}];
+  const T=[[-1,'PIX ENVIADO CONDUTORES BRASIL LTDA',-5000],[-1,'PAG BOLETO ENERGISA TO',-1284.37],[-2,'PIX RECEBIDO LOTEADORA EXEMPLO LTDA',38500],[-2,'POSTO AVENIDA COMBUSTIVEIS',-412.9],[-3,'TED ALUGUEL GALPAO',-3200],[-5,'PIX ENVIADO JOAO S PEREIRA',-1800],[-5,'COMPRA CARTAO CASA DO ELETRICISTA',-689.4],[-6,'FOLHA PAGAMENTO NOV',-9850],[-7,'TRANSF ENTRE CONTAS MESMA TITULARIDADE',-2000],[-9,'TARIFA PACOTE SERVICOS',-89.9]];
+  d.transactions=T.map(([o,desc,amount],i)=>({id:'txd'+i,account_id:'accd1',fitid:'d'+i,date:at(o),desc,amount,status:'pendente',imported_at:Date.now()}));
+  d.transactions.push({id:'txdc1',account_id:'accd1',fitid:'dc1',date:at(-12),desc:'PAG BOLETO CONTABILIDADE EXEMPLO',amount:-1100,status:'classificado',allocations:[{kind:'empresa',center:'Administrativo',category:'Contabilidade',amount:1100}],classified_at:Date.now()-1e6},{id:'txdc2',account_id:'accd1',fitid:'dc2',date:at(-11),desc:'POSTO AVENIDA COMBUSTIVEIS',amount:-380,status:'classificado',allocations:[{kind:'empresa',center:'Frota',category:'Combustível',amount:380}],classified_at:Date.now()-9e5});
   return d;
 }
 
@@ -236,7 +265,7 @@ async function authCall(fn){let r;try{r=await fn()}catch(e){r={error:e}}if(r&&r.
 let raf=0;
 function schedule(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;render()})}
 function route(){const h=(location.hash||'').slice(1)||'dashboard';return h.startsWith('obra-')?{page:'obra',id:h.slice(5)}:h.startsWith('cliente-')?{page:'cliente',id:h.slice(8)}:{page:h}}
-const NAV=[['dashboard','Dashboard','home'],['obras','Minhas Obras','build'],['@new-project','Nova Obra','plus'],['despesas','Lançar Despesa','coin'],['cronograma','Cronograma','cal'],['relatorios','Relatórios','doc'],['configuracoes','Configurações','gear']];
+const NAV=[['dashboard','Dashboard','home'],['obras','Minhas Obras','build'],['@new-project','Nova Obra','plus'],['despesas','Lançar Despesa','coin'],['financeiro','Financeiro','bank'],['cronograma','Cronograma','cal'],['relatorios','Relatórios','doc'],['configuracoes','Configurações','gear']];
 function render(){
   if(phase==='public'){document.body.classList.add('cview','pub');document.body.classList.remove('authp');$('#auth').hidden=true;$('#view').innerHTML=vPublic();return}
   const r=route();
@@ -258,11 +287,11 @@ function render(){
   else if(!canWrite)h+=`<div class="banner warn"><span>Seu acesso é somente leitura. Peça ao dono do aplicativo permissão de colaborador para lançar dados.</span></div>`;
   if(phase==='loading'){h+=`<div class="card empty"><b>Carregando seus dados…</b>${slow?'<span>Ainda não foi possível alcançar o armazenamento. Vou continuar tentando.</span>':''}</div>`}
   else{
-    const V={dashboard:vDash,obras:vObras,despesas:vDespesas,cronograma:vCrono,relatorios:vRel,configuracoes:vConf,obra:()=>vObra(r.id),cliente:()=>vCliente(r.id)};
+    const V={financeiro:vFin,dashboard:vDash,obras:vObras,despesas:vDespesas,cronograma:vCrono,relatorios:vRel,configuracoes:vConf,obra:()=>vObra(r.id),cliente:()=>vCliente(r.id)};
     h+=(V[r.page]||vDash)();
   }
   $('#view').innerHTML=h;
-  if(r.page==='dashboard'||!['obras','despesas','cronograma','relatorios','configuracoes','obra','cliente'].includes(r.page))drawCharts();
+  if(r.page==='dashboard'||!['obras','despesas','financeiro','cronograma','relatorios','configuracoes','obra','cliente'].includes(r.page))drawCharts();
   document.querySelectorAll('table.stack').forEach(t=>{const hs=[...t.querySelectorAll('thead th')].map(x=>x.textContent);t.querySelectorAll('tbody tr').forEach(r=>{let i=0;[...r.cells].forEach(c=>{c.dataset.l=c.colSpan>1?'':hs[i]||'';i+=c.colSpan})})});
   fillNames();
 }
@@ -317,6 +346,296 @@ async function authSubmit(f){
   if(b.isConnected)b.disabled=false;
 }
 
+/* --- financeiro --- */
+let FT='classificar',SEL=null,FS=null,FACC='',FTQ='',FMON='';
+const DEF_CENTERS=['Administrativo','Pessoal','Frota','Impostos e taxas','Financeiro'];
+const DEF_CCATS=['Salários e encargos','Pró-labore','Aluguel','Energia e água','Telefonia e internet','Contabilidade','Combustível','Manutenção de veículos','Impostos','Tarifas bancárias','Material de escritório','Seguros','Outros'];
+const INC_CATS=['Rendimentos','Outras receitas','Aporte de sócio','Empréstimo'];
+const CCAT_CENTER={'Salários e encargos':'Pessoal','Pró-labore':'Pessoal','Combustível':'Frota','Manutenção de veículos':'Frota','Impostos':'Impostos e taxas','Tarifas bancárias':'Financeiro','Seguros':'Administrativo'};
+const centers=()=>(D.settings.centers&&D.settings.centers.length)?D.settings.centers:DEF_CENTERS;
+const companyCats=()=>(D.settings.company_cats&&D.settings.company_cats.length)?D.settings.company_cats:DEF_CCATS;
+const acc=id=>D.accounts.find(a=>a.id===id);
+const txOf=id=>D.transactions.find(t=>t.id===id);
+const deacc=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+const payee=s=>deacc(s).replace(/\b(PIX|TED|DOC|TEF|ENVIADO|RECEBIDO|TRANSF(ERENCIA)?|PAG(TO|AMENTO)?|BOLETO|COMPRA|CARTAO|DEBITO|CREDITO|ELO|VISA|MASTER|EM|DE|DA|DO|PARA|LTDA|ME|EIRELI|S\/?A)\b/g,' ').replace(/[0-9\/\.\-:*]+/g,' ').replace(/\s+/g,' ').trim();
+const h32=(t,seed)=>{let h=seed>>>0;for(const ch of String(t)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0}return h.toString(36)};
+const txId=(accId,fit)=>'tx_'+h32(accId+'|'+fit,2166136261)+h32(fit+'|'+accId,374761393);
+const pending=()=>D.transactions.filter(t=>t.status==='pendente'&&(!FACC||t.account_id===FACC)).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.amount-b.amount));
+const destLabel=a=>{if(a.kind==='projeto'){const p=proj(a.project_id);return p?`${p.code} · ${p.name}`:'Cadastro removido'}if(a.kind==='empresa')return `Empresa · ${a.center||''}`;return 'Transferência entre contas'};
+
+function decodeOFX(buf){
+  const head=new TextDecoder('latin1').decode(buf.slice(0,600));
+  if(/CHARSET:\s*1252|ENCODING:\s*USASCII/i.test(head)&&!/encoding="utf-8"/i.test(head))return new TextDecoder('windows-1252').decode(buf);
+  try{return new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(e){return new TextDecoder('windows-1252').decode(buf)}
+}
+function parseOFX(text){
+  const tag=(src,n)=>{const m=new RegExp('<'+n+'>([^<\\r\\n]*)','i').exec(src);return m?m[1].trim():''};
+  const dt=v=>{const m=/^(\d{4})(\d{2})(\d{2})/.exec(v||'');return m?`${m[1]}-${m[2]}-${m[3]}`:''};
+  const num=v=>{v=String(v||'').trim();if(/,\d{1,2}$/.test(v)&&!/\.\d{1,2}$/.test(v))v=v.replace(/\./g,'').replace(',','.');return Number(v)};
+  const acctid=tag(text,'ACCTID'),bank=tag(text,'BANKID')||tag(text,'ORG');
+  const lb=/<LEDGERBAL>([\s\S]*?)(<\/LEDGERBAL>|<AVAILBAL>|<\/STMTRS>)/i.exec(text);
+  const bal=lb?num(tag(lb[1],'BALAMT')):null,balDate=lb?dt(tag(lb[1],'DTASOF')):'';
+  const txs=text.split(/<STMTTRN>/i).slice(1).map(b=>b.split(/<\/STMTTRN>/i)[0]).map(b=>{
+    const name=tag(b,'NAME'),memo=tag(b,'MEMO'),amount=num(tag(b,'TRNAMT')),date=dt(tag(b,'DTPOSTED'));
+    const desc=[name,memo].filter((x,i,a)=>x&&a.indexOf(x)===i).join(' · ')||tag(b,'TRNTYPE');
+    return {fitid:tag(b,'FITID')||('h'+h32(date+amount+desc,99)),date,amount,desc,type:tag(b,'TRNTYPE')};
+  }).filter(t=>t.date&&isFinite(t.amount)&&t.amount!==0);
+  return {acctid,bank,bal,balDate,txs};
+}
+async function finImport(files){
+  if(memory()&&!isDemo()){toast('Entre na sua conta para importar extratos.');return}
+  let novos=0,rep=0,erro=0,per=[];
+  for(const f of files){
+    try{
+      const o=parseOFX(decodeOFX(await f.arrayBuffer()));
+      if(!o.txs.length){erro++;continue}
+      const key=(o.bank||'banco')+'|'+(o.acctid||f.name);
+      let a=D.accounts.find(x=>x.key===key);
+      if(!a){const fin=String(o.acctid||'').replace(/\D/g,'').slice(-4);a={id:'acc_'+h32(key,7)+h32(key,11),key,bank:o.bank||'',acctid:o.acctid||'',name:`Conta ${fin?'final '+fin:(D.accounts.length+1)}`,created_at:Date.now()}}
+      const ds=o.txs.map(t=>t.date).sort();
+      if(o.bal!=null&&(!a.balance_date||(o.balDate||ds[ds.length-1])>=a.balance_date)){a={...a,balance:o.bal,balance_date:o.balDate||ds[ds.length-1]}}
+      a={...a,last_import:Date.now(),last_file:f.name};
+      await put('accounts',a);
+      const have=new Set(D.transactions.map(t=>t.id)),sig=new Set(D.transactions.filter(t=>t.account_id===a.id).map(t=>t.date+'|'+t.amount+'|'+t.desc));
+      const add=[];
+      for(const t of o.txs){const id=txId(a.id,t.fitid),sg=t.date+'|'+t.amount+'|'+t.desc;if(have.has(id)||sig.has(sg)){rep++;continue}have.add(id);sig.add(sg);add.push({id,account_id:a.id,fitid:t.fitid,date:t.date,amount:t.amount,desc:t.desc,type:t.type,status:'pendente',imported_at:Date.now(),file:f.name})}
+      await putMany('transactions',add);novos+=add.length;per.push([ds[0],ds[ds.length-1]]);
+    }catch(e){console.error(e);erro++}
+  }
+  FT='classificar';SEL=null;FS=null;render();
+  const p=per.length?` · período ${fdate(per.map(x=>x[0]).sort()[0])} a ${fdate(per.map(x=>x[1]).sort().pop())}`:'';
+  modal({title:'Extrato importado',cancel:'Fechar',body:`<p class="ink2"><b>${novos}</b> ${novos===1?'lançamento novo':'lançamentos novos'} para classificar${p}.</p>${rep?`<p class="small muted">${rep} ${rep===1?'lançamento já existia e foi ignorado':'lançamentos já existiam e foram ignorados'}, então nada foi duplicado.</p>`:''}${erro?`<p class="msg">${erro} ${erro===1?'arquivo não pôde ser lido':'arquivos não puderam ser lidos'}. Confira se é um extrato no formato OFX exportado pelo banco.</p>`:''}`});
+}
+
+function suggest(t){
+  const out={},debit=t.amount<0,v=Math.abs(t.amount),near=(d)=>Math.abs(ddiff(d,t.date))<=7;
+  const linked=new Set(D.transactions.flatMap(x=>(x.allocations||[]).map(a=>a.expense_id||a.receipt_id)).filter(Boolean));
+  if(debit){const e=D.expenses.filter(e=>!e.deleted&&e.status!=='estornada'&&!e.bank_tx_id&&!linked.has(e.id)&&Math.abs((+e.amount||0)-v)<0.01&&e.date&&near(e.date)).sort((a,b)=>Math.abs(ddiff(a.date,t.date))-Math.abs(ddiff(b.date,t.date)))[0];if(e)out.link={type:'expense',id:e.id,project_id:e.project_id,category:e.category}}
+  else{const r=D.receipts.filter(r=>!r.deleted&&!r.bank_tx_id&&!linked.has(r.id)&&Math.abs((+r.amount||0)-v)<0.01&&r.date&&near(r.date))[0];if(r)out.link={type:'receipt',id:r.id,project_id:r.project_id}}
+  const pk=payee(t.desc),dd=deacc(t.desc);
+  const rule=D.rules.find(r=>r.match&&dd.includes(deacc(r.match)));
+  if(rule)return {...out,src:'regra',rule:rule.id,kind:rule.kind,project_id:rule.project_id,center:rule.center,category:rule.category};
+  if(pk){const prev=D.transactions.filter(x=>x.status==='classificado'&&x.allocations&&x.allocations.length===1&&(x.amount<0)===debit&&payee(x.desc)===pk).sort((a,b)=>(b.classified_at||0)-(a.classified_at||0))[0];
+    if(prev){const a=prev.allocations[0],p=a.project_id&&proj(a.project_id);if(a.kind!=='projeto'||(p&&!['concluida','cancelada'].includes(p.status)))return {...out,src:'histórico',kind:a.kind,project_id:a.project_id,center:a.center,category:a.category}}}
+  if(/TRANSF.{0,20}(ENTRE|MESMA|PROPRIA)|APLICACAO|RESGATE|PAGTO? FATURA|FATURA CART/.test(dd))return {...out,src:'transferência',kind:'transferencia'};
+  if(out.link)return {...out,src:'lançamento',kind:'projeto',project_id:out.link.project_id,category:out.link.category};
+  if(!debit){const c=D.clients.find(c=>{const w=deacc(c.name).split(/\s+/).filter(x=>x.length>3);return w.length&&w.some(x=>dd.includes(x))});
+    if(c){const p=D.projects.filter(p=>p.client_id===c.id&&!['cancelada'].includes(p.status)).map(p=>({p,c:calc(p)})).filter(x=>x.c.receivable>0).sort((a,b)=>b.c.receivable-a.c.receivable)[0];if(p)return {...out,src:'cliente',kind:'projeto',project_id:p.p.id}}}
+  return out;
+}
+function sugPill(t){
+  const s=suggest(t);
+  if(s.kind==='transferencia')return `<span class="pill">Transferência · não é custo</span>`;
+  if(s.kind==='empresa')return `<span class="pill s-aprovada">${s.src==='regra'?'Regra':'Sugestão'}: Empresa · ${esc(s.center||'')}${s.category?' · '+esc(s.category):''}</span>`;
+  if(s.kind==='projeto'){const p=proj(s.project_id);if(p)return `<span class="pill k-${kindOf(p)}">${s.link?'Já lançado':t.amount>0?'Recebimento':s.src==='regra'?'Regra':'Sugestão'}: ${esc(p.code)}${s.category?' · '+esc(s.category):''}</span>`}
+  return `<span class="pill">Sem sugestão</span>`;
+}
+function finSelect(id){
+  if(!txOf(id))return;finSelectSilent(id);
+  if(innerWidth<=820){modal({title:'Classificar lançamento',cancel:'',body:`<div id="fin-panel">${finPanelInner()}</div>`});}
+  else{render()}
+}
+function finSetKind(k){if(!FS)return;if(!FS.ruleTouched)FS.rule=k==='empresa'&&!!FS.ruleText;FS.kind=k;FS.project_id='';FS.category='';FS.useLink=false;FS.quick=false;FS.q='';if(k==='empresa'){FS.center=FS.center||centers()[0]}finPanel()}
+function finPanel(){const el=(!M.hidden&&$('#fin-panel',M))||$('#fin-panel');if(el)el.innerHTML=finPanelInner()}
+function finField(t){
+  const f=t.dataset.fin;
+  if(f==='dest'){const v=t.value;if(v.startsWith('c:'))FS.center=v.slice(2);else FS.project_id=v.slice(2);finPanel();return}
+  if(f==='cat'){FS.category=t.value;if(FS.kind==='empresa'&&CCAT_CENTER[t.value]&&!FS.centerTouched){FS.center=CCAT_CENTER[t.value];finPanel()}return}
+  if(f==='center'){FS.center=t.value;FS.centerTouched=true;return}
+  if(f==='supplier'){FS.supplier=t.value;return}
+  if(f==='rule'){FS.rule=t.checked;FS.ruleTouched=true;return}
+  if(f==='ruletext'){FS.ruleText=t.value;return}
+  if(f==='sdest'){FS.splits[+t.dataset.i].dest=t.value;FS.splits[+t.dataset.i].category='';finPanel();return}
+  if(f==='scat'){FS.splits[+t.dataset.i].category=t.value;return}
+  if(f==='acc'){FACC=t.value;SEL=null;FS=null;render();return}
+  if(f==='month'){FMON=t.value;render();return}
+}
+function activeOf(kind){const t=txOf(SEL)||{};return D.projects.filter(p=>kindOf(p)===kind&&!['concluida','cancelada'].includes(p.status)).map(p=>({p,last:Math.max(p.created_at||0,...D.transactions.filter(x=>(x.allocations||[]).some(a=>a.project_id===p.id)).map(x=>x.classified_at||0))})).sort((a,b)=>b.last-a.last).map(x=>x.p)}
+function finDestList(){
+  if(FS.kind==='empresa')return centers().map(c=>`<label class="dopt${FS.center===c?' on':''}"><input type="radio" name="fdest" value="c:${esc(c)}" data-fin="dest"${FS.center===c?' checked':''}><span><b>${esc(c)}</b><small>Centro da empresa</small></span></label>`).join('');
+  const q=deacc(FS.q);let l=activeOf(FS.kind);
+  if(FS.project_id&&!l.some(p=>p.id===FS.project_id)){const p=proj(FS.project_id);if(p)l=[p,...l]}
+  if(q)l=l.filter(p=>deacc([p.code,p.name,(cli(p.client_id)||{}).name].join(' ')).includes(q));
+  const lim=q?20:5,more=l.length-lim;
+  if(!l.length)return `<p class="small muted">${q?'Nada encontrado.':'Nenhum cadastro ativo deste tipo.'} Use o botão abaixo para criar.</p>`;
+  return l.slice(0,lim).map(p=>`<label class="dopt${FS.project_id===p.id?' on':''}"><input type="radio" name="fdest" value="p:${p.id}" data-fin="dest"${FS.project_id===p.id?' checked':''}><span><small>${esc(p.code)} · ${esc((cli(p.client_id)||{}).name||'Sem cliente')}</small><b>${esc(p.name)}</b></span></label>`).join('')+(more>0?`<p class="small muted">Mais ${more}. Digite para buscar.</p>`:'');
+}
+function destOptions(sel,debit){
+  const g=(k)=>D.projects.filter(p=>kindOf(p)===k&&!['concluida','cancelada'].includes(p.status));
+  return `<option value="">Escolha o destino</option>${Object.keys(KIND).map(k=>`<optgroup label="${KIND[k].pl}">${g(k).map(p=>`<option value="p:${p.id}"${sel==='p:'+p.id?' selected':''}>${esc(p.code+' · '+p.name)}</option>`).join('')}</optgroup>`).join('')}<optgroup label="Empresa">${centers().map(c=>`<option value="c:${esc(c)}"${sel==='c:'+c?' selected':''}>${esc(c)}</option>`).join('')}</optgroup>`;
+}
+const catOpts=(list,sel)=>`<option value="">Categoria</option>${list.map(c=>`<option${c===sel?' selected':''}>${esc(c)}</option>`).join('')}`;
+function finSumHTML(){const t=txOf(SEL),tot=sum(FS.splits,x=>x.amount),dif=Math.abs(t.amount)-tot,ok=Math.abs(dif)<0.005;return `<div id="fin-sum" class="small" style="display:flex;justify-content:space-between;font-weight:600;color:${ok?'var(--pos)':'var(--warn)'}"><span>${ok?'Total dividido igual ao valor do extrato':dif>0?`Falta dividir ${money(dif)}`:`Passou ${money(-dif)} do valor`}</span><span>${money(tot)} de ${money(Math.abs(t.amount))}</span></div>`}
+function finToggleSplit(){
+  const t=txOf(SEL);FS.split=!FS.split;
+  if(FS.split&&!FS.splits.length){const first=FS.kind==='empresa'?(FS.center?'c:'+FS.center:''):(FS.project_id?'p:'+FS.project_id:'');FS.splits=[{dest:first,category:FS.category,amount:Math.abs(t.amount)},{dest:'',category:'',amount:0}]}
+  finPanel();
+}
+function finPanelInner(){
+  const t=txOf(SEL);if(!t||!FS)return `<div class="empty"><b>Selecione um lançamento</b><span>Clique em um item da lista para escolher o destino.</span></div>`;
+  const debit=t.amount<0,a=acc(t.account_id)||{},lk=FS.link&&(FS.link.type==='expense'?D.expenses.find(e=>e.id===FS.link.id):D.receipts.find(r=>r.id===FS.link.id));
+  const kinds=[['obra','Obra'],['servico','Serviço'],['venda','Venda'],['empresa','Empresa']];
+  let h=`<div class="fp-head"><div><div class="small muted">${fdate(t.date)} · ${esc(a.name||'Conta')}</div><h2>${esc(t.desc)}</h2></div><div class="fp-val ${debit?'neg':'pos'}">${debit?'−':'+'}${money(Math.abs(t.amount))}</div></div>`;
+  if(lk){const lp=proj(lk.project_id);h+=`<div class="fp-link${FS.useLink?' on':''}">${ic('link')}<div><b>${debit?'Despesa já lançada':'Recebimento já lançado'}${lp?' em '+esc(lp.code):''}:</b> ${esc(lk.description||lk.category||'')}, ${money(lk.amount)} em ${fdate(lk.date)}. ${FS.useLink?'Será vinculado, sem criar outro lançamento.':'Vincule para não contar duas vezes.'}</div><button type="button" class="btn" data-act="fin-link">${FS.useLink?'Não vincular':'Vincular'}</button></div>`}
+  if(FS.kind==='transferencia'){
+    h+=`<div class="banner demo"><span>Marcado como <b>transferência entre contas</b> (aplicação, resgate ou pagamento de fatura). Não entra como receita nem custo.</span><button type="button" class="btn" data-act="fin-kind" data-id="obra">Desfazer</button></div>`;
+  }else if(FS.useLink&&lk){
+    h+=`<p class="small ink2">Ao confirmar, o lançamento do banco fica ligado ao registro existente. Nada novo é criado.</p>`;
+  }else{
+    h+=`<div><span class="lbl">Tipo de destino</span><div class="seg2" role="group" aria-label="Tipo de destino">${kinds.map(([k,l])=>`<button type="button" class="${FS.kind===k?'on':''}" data-act="fin-kind" data-id="${k}" aria-pressed="${FS.kind===k}">${l}</button>`).join('')}</div></div>`;
+    if(FS.split){
+      const cats=d=>d.startsWith('c:')?(debit?companyCats():INC_CATS):(debit?allCats():[]);
+      h+=`<div class="fp-split"><div class="row" style="justify-content:space-between"><b>${ic('split')} Dividir entre destinos</b><button type="button" class="lnk" data-act="fin-split">Cancelar divisão</button></div>
+      ${FS.splits.map((x,i)=>`<div class="srow"><select data-fin="sdest" data-i="${i}" aria-label="Destino ${i+1}">${destOptions(x.dest,debit)}</select>${cats(x.dest).length?`<select data-fin="scat" data-i="${i}" aria-label="Categoria ${i+1}">${catOpts(cats(x.dest),x.category)}</select>`:''}<input type="text" inputmode="numeric" data-money data-fin="samount" data-i="${i}" value="${x.amount?money(x.amount):''}" placeholder="R$ 0,00" aria-label="Valor ${i+1}">${FS.splits.length>2?`<button type="button" class="icb" data-act="fin-split-del" data-id="${i}" aria-label="Remover parte">${ic('x')}</button>`:''}</div>`).join('')}
+      <button type="button" class="lnk" data-act="fin-split-add">${ic('plus')} Adicionar parte</button>${finSumHTML()}</div>`;
+    }else{
+      h+=`<div><span class="lbl">${FS.kind==='empresa'?'Centro':'Destino'}</span>${FS.kind!=='empresa'?`<div class="srch">${ic('search')}<input type="search" id="fin-q" placeholder="Buscar ${KIND[FS.kind].pl.toLowerCase()} ativas por nome, código ou cliente" value="${esc(FS.q)}" aria-label="Buscar destino"></div>`:''}<div id="fdest-list" class="dlist">${finDestList()}</div>
+      ${FS.kind!=='empresa'?(FS.quick?`<div class="fp-quick"><b>${KIND[FS.kind].novo} rápido${FS.kind==='venda'?'a':''}</b><input type="text" id="fq-name" placeholder="Nome, ex.: ${FS.kind==='venda'?'Kit padrão de entrada':FS.kind==='servico'?'Manutenção de quadro':'Rede rural 34,5 kV'}" aria-label="Nome"><input type="text" id="fq-client" list="fq-clients" placeholder="Cliente (escolha ou digite um novo)" aria-label="Cliente"><datalist id="fq-clients">${D.clients.map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist><div class="row"><button type="button" class="btn dark" data-act="fin-quick-save">Criar e usar</button><button type="button" class="btn ghost" data-act="fin-quick">Cancelar</button></div></div>`:`<button type="button" class="lnk acc" data-act="fin-quick">${ic('plus')} Criar ${KIND[FS.kind].n.toLowerCase()} sem sair daqui</button>`):''}</div>`;
+      if(debit||FS.kind==='empresa'){const list=FS.kind==='empresa'?(debit?companyCats():INC_CATS):allCats();
+        h+=`<div class="g2f"><label class="f" for="fin-cat">Categoria<select id="fin-cat" data-fin="cat">${catOpts(list,FS.category)}</select></label>${debit&&FS.kind!=='empresa'?`<label class="f" for="fin-sup">Fornecedor<input type="text" id="fin-sup" data-fin="supplier" value="${esc(FS.supplier)}"></label>`:''}</div>`}
+      else h+=`<p class="small ink2">Será registrado como <b>recebimento</b> no cadastro escolhido.</p>`;
+      h+=`<button type="button" class="lnk" data-act="fin-split">${ic('split')} Dividir entre destinos</button>`;
+    }
+    if(!FS.split)h+=`<label class="chk"><input type="checkbox" data-fin="rule"${FS.rule?' checked':''}> Criar regra: quando aparecer <input type="text" data-fin="ruletext" value="${esc(FS.ruleText)}" aria-label="Texto da regra" style="width:auto;min-height:32px;padding:4px 8px;display:inline-block;max-width:170px"> sugerir este destino</label>`;
+  }
+  h+=`<p class="msg" id="fin-msg" role="alert"></p><div class="fp-act"><button type="button" class="btn primary big" data-act="fin-confirm">Confirmar e ir para o próximo</button><button type="button" class="btn" data-act="fin-skip">Pular</button></div>
+  <div class="row small" style="justify-content:center;gap:16px">${FS.kind!=='transferencia'?`<button type="button" class="lnk" data-act="fin-transfer">É transferência entre contas</button>`:''}<button type="button" class="lnk" data-act="fin-ignore">Ignorar lançamento</button></div>`;
+  return h;
+}
+async function finQuickSave(){
+  const P=(!M.hidden&&$('#fin-panel',M))||document,n=($('#fq-name',P)||{}).value||'',cn=(($('#fq-client',P)||{}).value||'').trim(),msg=$('#fin-msg',P);
+  if(!n.trim()){if(msg)msg.textContent='Informe o nome.';return}
+  try{
+    let c=D.clients.find(x=>x.name.toLowerCase()===cn.toLowerCase());
+    if(!c&&cn){c={id:uid('c'),name:cn,doc:'',phone:'',whatsapp:'',email:'',created_at:Date.now()};await put('clients',c)}
+    const t=txOf(SEL),k=FS.kind;
+    const p={id:uid('p'),kind:k,code:nextCode(k),name:n.trim(),client_id:c?c.id:null,status:'andamento',contract_value:0,planned_cost:0,real_start:t.date,progress:0,created_at:Date.now(),updated_at:Date.now(),color:k==='venda'?'petroleo':k==='servico'?'azul':undefined};
+    await put('projects',p);await log('obra','criou',p.id,`${KIND[k].n} cadastrada pelo financeiro: ${p.name} (${p.code})`,p.id);
+    FS.project_id=p.id;FS.quick=false;finPanel();toast(`${p.code} criado. Complete o valor depois, se quiser.`);
+  }catch(e){if(msg)msg.textContent=errText(e)}
+}
+async function finClassify(t,st){
+  const debit=t.amount<0,v=Math.abs(t.amount),allocs=[];
+  const mk=async(dest,category,amount,link)=>{
+    if(st.kind==='transferencia'){allocs.push({kind:'transferencia',amount});return}
+    if(link){const isE=link.type==='expense',col=isE?'expenses':'receipts',rec=(isE?D.expenses:D.receipts).find(x=>x.id===link.id);
+      if(rec){await put(col,{...rec,bank_tx_id:t.id,updated_at:Date.now()});allocs.push({kind:'projeto',project_id:rec.project_id,category:rec.category||'',amount,[isE?'expense_id':'receipt_id']:rec.id,linked:true});return}}
+    if(dest.startsWith('c:')){allocs.push({kind:'empresa',center:dest.slice(2),category,amount});return}
+    const pid=dest.slice(2),p=proj(pid);if(!p)throw new Error('destino');
+    if(debit){const e={id:uid('e'),project_id:pid,date:t.date,category:category||'Outros',description:t.desc,amount,supplier:st.supplier||'',payment:'Extrato bancário',responsible:myName||'',notes:'Importado do extrato bancário',status:'ativa',attachments:[],bank_tx_id:t.id,created_at:Date.now(),created_by:myId||null};
+      await put('expenses',e);await log('despesa','criou',pid,`Despesa do extrato: ${t.desc} (${money(amount)})`,e.id);allocs.push({kind:'projeto',project_id:pid,category:e.category,amount,expense_id:e.id})}
+    else{const r={id:uid('r'),project_id:pid,date:t.date,amount,method:'Transferência',description:t.desc,bank_tx_id:t.id,created_at:Date.now()};
+      await put('receipts',r);await log('recebimento','criou',pid,`Recebimento do extrato: ${money(amount)}`,r.id);allocs.push({kind:'projeto',project_id:pid,amount,receipt_id:r.id})}
+  };
+  if(st.useLink&&st.link)await mk('',null,v,st.link);
+  else if(st.kind==='transferencia')await mk('',null,v);
+  else if(st.split){for(const x of st.splits)await mk(x.dest,x.category,x.amount)}
+  else await mk(st.kind==='empresa'?'c:'+st.center:'p:'+st.project_id,st.category,v);
+  await put('transactions',{...t,status:'classificado',allocations:allocs,classified_at:Date.now()});
+  if(st.rule&&st.ruleText&&st.ruleText.trim().length>=3&&!st.split&&!st.useLink){const m=st.ruleText.trim(),id='r_'+h32(deacc(m),5);
+    await put('rules',{id,match:m,kind:st.kind==='transferencia'?'transferencia':st.kind==='empresa'?'empresa':'projeto',project_id:st.kind==='empresa'||st.kind==='transferencia'?'':st.project_id,center:st.kind==='empresa'?st.center:'',category:st.category||'',created_at:Date.now()})}
+}
+function finValidate(t){
+  const debit=t.amount<0;
+  if(FS.useLink&&FS.link)return '';
+  if(FS.kind==='transferencia')return '';
+  if(FS.split){const tot=sum(FS.splits,x=>x.amount);if(FS.splits.some(x=>!x.dest||!(x.amount>0)))return 'Escolha o destino e o valor de cada parte.';if(Math.abs(tot-Math.abs(t.amount))>0.005)return 'A soma das partes precisa ser igual ao valor do extrato.';if(debit&&FS.splits.some(x=>!x.category))return 'Escolha a categoria de cada parte.';return ''}
+  if(FS.kind==='empresa'){if(!FS.center)return 'Escolha o centro da empresa.';if(!FS.category)return 'Escolha a categoria.';return ''}
+  if(!FS.project_id)return `Escolha ${FS.kind==='venda'?'a venda':FS.kind==='servico'?'o serviço':'a obra'} ou crie um novo cadastro.`;
+  if(debit&&!FS.category)return 'Escolha a categoria da despesa.';
+  return '';
+}
+async function finConfirm(){
+  const t=txOf(SEL);if(!t||!FS)return;
+  const err=finValidate(t),msg=((!M.hidden&&$('#fin-msg',M))||$('#fin-msg'));if(err){if(msg)msg.textContent=err;return}
+  const b=((!M.hidden&&$('[data-act=fin-confirm]',M))||$('[data-act=fin-confirm]'));if(b)b.disabled=true;
+  try{await finClassify(t,FS);toast('Lançamento classificado.');finNext(false)}
+  catch(e){console.error(e);if(msg)msg.textContent=e.message==='destino'?'O destino escolhido não existe mais.':errText(e);if(b)b.disabled=false}
+}
+function finNext(skip){
+  const l=pending(),i=l.findIndex(x=>x.id===SEL);
+  const nx=skip?(l[i+1]||l[0]):(l.find((x,j)=>j>=i&&x.id!==SEL)||l.find(x=>x.id!==SEL));
+  if(nx&&nx.id!==SEL){finSelect(nx.id);if(innerWidth>820)render()}else{SEL=null;FS=null;closeModal();render();if(!l.filter(x=>x.id!==SEL).length)toast('Tudo classificado.')}
+}
+async function finIgnore(){const t=txOf(SEL);if(!t)return;try{await put('transactions',{...t,status:'ignorado',allocations:[],classified_at:Date.now()});toast('Lançamento ignorado. Ele fica em Classificados, se precisar desfazer.');finNext(false)}catch(e){toast(errText(e))}}
+async function finUndo(id){
+  const t=txOf(id);if(!t)return;
+  confirmBox('Desfazer classificação','O lançamento volta para "A classificar". Despesas e recebimentos criados a partir dele são removidos das obras (fica registrado no histórico). Lançamentos que já existiam são apenas desvinculados.','Desfazer',async()=>{
+    for(const a of t.allocations||[]){
+      if(a.expense_id){const e=D.expenses.find(x=>x.id===a.expense_id);if(e){if(a.linked){const {bank_tx_id,...r}=e;await put('expenses',{...r,updated_at:Date.now()})}else{await put('expenses',{...e,deleted:true,deleted_at:Date.now()});await log('despesa','excluiu',e.project_id,`Despesa do extrato removida ao desfazer a classificação: ${e.description} (${money(e.amount)})`,e.id)}}}
+      if(a.receipt_id){const r=D.receipts.find(x=>x.id===a.receipt_id);if(r){if(a.linked){const {bank_tx_id,...o}=r;await put('receipts',{...o,updated_at:Date.now()})}else{await put('receipts',{...r,deleted:true,deleted_at:Date.now()});await log('recebimento','excluiu',r.project_id,`Recebimento do extrato removido ao desfazer a classificação: ${money(r.amount)}`,r.id)}}}
+    }
+    await put('transactions',{...t,status:'pendente',allocations:[],classified_at:null});toast('Classificação desfeita.');
+  });
+}
+async function finApplyAll(){
+  const l=pending().map(t=>({t,s:suggest(t)})).filter(x=>(x.s.src==='regra'||x.s.src==='histórico'||x.s.src==='transferência')&&!x.s.link&&(x.s.kind==='transferencia'||(x.s.kind==='empresa'?x.s.center&&(x.s.category||x.t.amount>0):x.s.project_id&&proj(x.s.project_id)&&(x.s.category||x.t.amount>0))));
+  if(!l.length){toast('Nenhuma sugestão completa para aplicar.');return}
+  confirmBox('Aplicar sugestões',`${l.length} ${l.length===1?'lançamento será classificado':'lançamentos serão classificados'} com as regras e o histórico. Você pode desfazer cada um em Classificados.`,'Aplicar',async()=>{
+    let n=0;for(const {t,s} of l){const p=s.project_id&&proj(s.project_id);await finClassify(t,{kind:s.kind==='projeto'?kindOf(p):s.kind,project_id:s.project_id||'',center:s.center||'',category:s.category||'',supplier:'',split:false,useLink:false,rule:false});n++}
+    SEL=null;FS=null;toast(`${n} lançamentos classificados.`);
+  });
+}
+function finAccEdit(id){const a=acc(id);modal({title:'Conta bancária',body:`<div class="form">${fld('Nome da conta','name',a.name,{full:true,req:true})}</div><p class="small muted">Banco ${esc(a.bank||'—')} · conta ${esc(a.acctid||'—')}</p>`,onSubmit:async(f,msg)=>{const v=vals(f);if(!v.name){msg('Informe o nome.');return false}await put('accounts',{...a,name:v.name})}})}
+function finDoneRows(){
+  const q=deacc(FTQ);let l=D.transactions.filter(t=>t.status!=='pendente'&&(!FACC||t.account_id===FACC));
+  if(q)l=l.filter(t=>deacc(t.desc+' '+(t.allocations||[]).map(destLabel).join(' ')).includes(q));
+  l.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!l.length)return `<p class="muted small" style="padding:10px 0">Nenhum lançamento classificado${q?' com essa busca':''}.</p>`;
+  return l.slice(0,300).map(t=>`<div class="li"><div class="m"><div class="t">${esc(t.desc)}</div><div class="d">${fdate(t.date)} · ${t.status==='ignorado'?'<b>Ignorado</b>':(t.allocations||[]).map(a=>esc(destLabel(a))+(a.category?' · '+esc(a.category):'')+((t.allocations||[]).length>1?' ('+money(a.amount)+')':'')+(a.linked?' · vinculado':'')).join(' + ')}</div></div><div class="rt"><div class="a ${t.amount<0?'neg':'pos'}">${t.amount<0?'−':'+'}${money(Math.abs(t.amount))}</div><div class="acts" data-w><button class="btn ghost" style="padding:4px 10px;min-height:0" data-act="fin-undo" data-id="${t.id}">Desfazer</button></div></div></div>`).join('')+(l.length>300?'<p class="small muted">Mostrando os 300 mais recentes. Use a busca.</p>':'');
+}
+function finResult(){
+  const months=[...new Set([...D.transactions.map(t=>(t.date||'').slice(0,7)),...D.expenses.map(e=>(e.date||'').slice(0,7)),...D.receipts.map(r=>(r.date||'').slice(0,7))].filter(Boolean))].sort().reverse();
+  const m=FMON||today().slice(0,7);
+  const inM=d=>(d||'').startsWith(m);
+  const rec=D.receipts.filter(r=>!r.deleted&&inM(r.date)),exp=D.expenses.filter(e=>!e.deleted&&e.status!=='estornada'&&inM(e.date));
+  const by={};for(const r of rec){(by[r.project_id]=by[r.project_id]||{r:0,c:0}).r+=+r.amount||0}for(const e of exp){(by[e.project_id]=by[e.project_id]||{r:0,c:0}).c+=+e.amount||0}
+  const comp=D.transactions.filter(t=>t.status==='classificado'&&inM(t.date)).flatMap(t=>(t.allocations||[]).filter(a=>a.kind==='empresa').map(a=>({...a,debit:t.amount<0})));
+  const fixed={},inc={};for(const a of comp){const o=a.debit?fixed:inc;o[a.category||'Outros']=(o[a.category||'Outros']||0)+(+a.amount||0)}
+  const pend=D.transactions.filter(t=>t.status==='pendente'&&inM(t.date)).length;
+  const groups=Object.keys(KIND).map(k=>{const items=Object.entries(by).map(([pid,v])=>({p:proj(pid),...v})).filter(x=>x.p&&kindOf(x.p)===k).sort((a,b)=>(b.r-b.c)-(a.r-a.c));return {k,items,r:sum(items,x=>x.r),c:sum(items,x=>x.c)}});
+  const R=sum(groups,g=>g.r),C=sum(groups,g=>g.c),F=sum(Object.values(fixed)),I=sum(Object.values(inc)),L=R+I-C-F;
+  const fx=Object.entries(fixed).sort((a,b)=>b[1]-a[1]),mx=fx.length?fx[0][1]:1;
+  const mopts=[...new Set([m,...months])].sort().reverse().map(x=>`<option value="${x}"${x===m?' selected':''}>${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][+x.slice(5)-1]} de ${x.slice(0,4)}</option>`).join('');
+  let h=`<div class="row" style="justify-content:space-between"><p class="ink2 small">Receitas e custos lançados no mês (manuais e do extrato) e os custos fixos classificados.</p><label class="f" for="fin-mon" style="flex-direction:row;align-items:center;gap:8px">Mês<select id="fin-mon" data-fin="month" style="width:auto">${mopts}</select></label></div>`;
+  if(pend)h+=`<div class="banner warn"><span>${pend} ${pend===1?'lançamento do extrato deste mês ainda não foi classificado e está':'lançamentos do extrato deste mês ainda não foram classificados e estão'} fora do resultado.</span><button class="btn" data-act="fin-tab" data-id="classificar">Classificar agora</button></div>`;
+  h+=`<div class="grid g4">${kpi('Receitas',money(R+I),I?`Inclui ${money(I)} fora dos trabalhos`:'Obras, serviços e vendas','tone-pos','coin')}${kpi('Custos diretos',money(C),'Ligados a um trabalho','tone-neg','build')}${kpi('Custos fixos',money(F),'Centros da empresa','tone-info','bank')}${kpi('Lucro do mês',money(L),R+I>0?pct(L/(R+I)*100)+' das receitas':'',`hl ${L<0?'tone-neg':'tone-pos'}`,'doc')}</div>`;
+  const row=x=>`<tr><td>${dot(x.p)}<span class="muted small">${esc(x.p.code)}</span> <a href="#obra-${x.p.id}"><b>${esc(x.p.name)}</b></a></td><td class="r">${money(x.r)}</td><td class="r neg">${money(x.c)}</td><td class="r ${x.r-x.c<0?'neg':'pos'}"><b>${money(x.r-x.c)}</b></td></tr>`;
+  const tb=groups.filter(g=>g.items.length).map(g=>`<tr class="grp k-${g.k}"><td>${KIND[g.k].pl}</td><td class="r">${money(g.r)}</td><td class="r">${money(g.c)}</td><td class="r"><b>${money(g.r-g.c)}</b></td></tr>${g.items.map(row).join('')}`).join('');
+  h+=`<div class="fin-res"><div class="card"><h2>Por obra, serviço e venda</h2>${tb?`<div class="scroll"><table class="stack"><thead><tr><th>Destino</th><th class="r">Receita</th><th class="r">Custo direto</th><th class="r">Resultado</th></tr></thead><tbody>${tb}<tr><td><b>Total dos trabalhos</b></td><td class="r"><b>${money(R)}</b></td><td class="r neg"><b>${money(C)}</b></td><td class="r pos"><b>${money(R-C)}</b></td></tr></tbody></table></div>`:'<p class="muted small">Nenhum recebimento ou despesa neste mês.</p>'}</div>
+   <div style="display:flex;flex-direction:column;gap:14px;min-width:0"><div class="card"><h2>Resultado da empresa</h2><div class="dre">${[['Receitas dos trabalhos',R,''],I?['Outras receitas',I,'']:null,['(−) Custos diretos',C,'neg'],['(−) Custos fixos da empresa',F,'neg']].filter(Boolean).map(([l,v,c])=>`<div><span class="${c}">${l}</span><b class="${c}">${money(v)}</b></div>`).join('')}<div class="tot"><span>= Lucro do mês</span><b class="${L<0?'neg':'pos'}">${money(L)}</b></div></div></div>
+   <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Custos fixos</h2><b class="num">${money(F)}</b></div>${fx.length?fx.map(([k,v])=>`<div class="fxr"><div class="row" style="justify-content:space-between"><span>${esc(k)}</span><b class="num">${money(v)}</b></div><div class="bar"><i style="width:${(v/mx*100).toFixed(0)}%;background:var(--info)"></i></div></div>`).join(''):'<p class="muted small">Nenhum custo fixo classificado neste mês.</p>'}</div></div></div>`;
+  return h;
+}
+function vFin(){
+  const pend=D.transactions.filter(t=>t.status==='pendente');
+  let h=`<div class="head"><div><h1>Financeiro</h1><p class="sub">Extrato do banco classificado por obra, serviço, venda ou custo da empresa</p></div><div class="row">${D.accounts.length>1?`<select data-fin="acc" aria-label="Conta" style="width:auto"><option value="">Todas as contas</option>${D.accounts.map(a=>`<option value="${a.id}"${FACC===a.id?' selected':''}>${esc(a.name)}</option>`).join('')}</select>`:''}<button class="btn dark" data-act="fin-import" data-w>${ic('upload')} Importar extrato (OFX)</button><input type="file" id="ofx-in" accept=".ofx,.OFX,application/x-ofx,text/plain" multiple hidden></div></div>`;
+  const tabs=[['classificar',`A classificar${pend.length?' ('+pend.length+')':''}`],['classificados','Classificados'],['resultado','Resultado do mês'],['regras','Regras'],['contas','Contas']];
+  h+=`<div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" aria-selected="${FT===k}" class="${FT===k?'on':''}" data-act="fin-tab" data-id="${k}">${l}</button>`).join('')}</div>`;
+  if(FT==='classificar'){
+    const l=pending();
+    if(!D.transactions.length)return h+`<div class="card empty"><b>Nenhum extrato importado</b><span>No site ou aplicativo do banco, exporte o extrato da conta no formato <b>OFX</b> (às vezes chamado de "Money" ou "arquivo para gerenciador financeiro") e importe aqui. Pode importar o mesmo período mais de uma vez: nada é duplicado.</span><button class="btn primary" data-act="fin-import" data-w>${ic('upload')} Importar extrato (OFX)</button>${isDemo()?'':'<button class="btn" data-act="demo-on">Ver com dados de demonstração</button>'}</div>`;
+    const out=sum(l.filter(t=>t.amount<0),t=>-t.amount),inn=sum(l.filter(t=>t.amount>0),t=>t.amount),bal=sum(D.accounts.filter(a=>!FACC||a.id===FACC),a=>+a.balance||0);
+    const lastDate=D.accounts.map(a=>a.balance_date||'').sort().pop();
+    h+=`<div class="grid g4">${kpi('A classificar',`${l.length}`,'Fora do resultado até classificar','tone-warn','doc')}${kpi('Saídas a classificar',money(out),`${l.filter(t=>t.amount<0).length} pagamentos`,'tone-neg','coin')}${kpi('Entradas a classificar',money(inn),`${l.filter(t=>t.amount>0).length} recebimentos`,'tone-pos','down')}${kpi('Saldo no banco',money(bal),lastDate?'Conforme extrato de '+fdate(lastDate):'Sem saldo no extrato','tone-info','bank')}</div>`;
+    if(!l.length)return h+`<div class="card empty"><b>Tudo classificado</b><span>Importe o próximo extrato quando quiser.</span></div>`;
+    if(SEL&&!l.some(x=>x.id===SEL)){SEL=null;FS=null}
+    if(!SEL&&innerWidth>820){const f=l[0];SEL=f.id;const keep=FS;FS=null;finSelectSilent(f.id)}
+    const auto=l.filter(t=>{const s=suggest(t);return (s.src==='regra'||s.src==='histórico'||s.src==='transferência')&&!s.link}).length;
+    h+=`<div class="fin-grid"><div class="card fin-list"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="small ink2">${l.length} ${l.length===1?'lançamento':'lançamentos'}, do mais recente ao mais antigo</span>${auto?`<button class="btn" data-act="fin-apply" data-w>${ic('bolt')} Aplicar ${auto} ${auto===1?'sugestão':'sugestões'} automáticas</button>`:''}</div>
+      ${l.slice(0,400).map(t=>`<button type="button" class="txr${t.id===SEL?' on':''}" data-act="fin-sel" data-id="${t.id}"><span class="dt">${fdate(t.date).slice(0,5)}</span><span class="m"><span class="t">${esc(t.desc)}</span>${sugPill(t)}</span><span class="a ${t.amount<0?'neg':'pos'}">${t.amount<0?'−':'+'}${money(Math.abs(t.amount))}</span></button>`).join('')}${l.length>400?'<p class="small muted">Mostrando 400. Classifique para ver os próximos.</p>':''}</div>
+      ${innerWidth>820?`<div class="card fin-side" id="fin-panel">${finPanelInner()}</div>`:''}</div>`;
+    return h;
+  }
+  if(FT==='classificados')return h+`<div class="card"><div class="row" style="margin-bottom:8px"><input type="search" id="fin-txq" placeholder="Buscar por descrição ou destino" value="${esc(FTQ)}" style="flex:1"></div><div class="list" id="fin-done">${finDoneRows()}</div></div>`;
+  if(FT==='resultado')return h+finResult();
+  if(FT==='regras')return h+`<div class="card"><h2>Regras automáticas</h2><p class="small muted" style="margin-bottom:10px">Quando a descrição do extrato contém o texto, o sistema sugere o destino. Crie regras marcando a opção na hora de classificar.</p>${D.rules.length?`<div class="list">${D.rules.slice().sort((a,b)=>(a.match||'').localeCompare(b.match||'')).map(r=>`<div class="li"><div class="m"><div class="t">“${esc(r.match)}”</div><div class="d">${esc(r.kind==='transferencia'?'Transferência entre contas':r.kind==='empresa'?'Empresa · '+(r.center||''):(proj(r.project_id)?proj(r.project_id).code+' · '+proj(r.project_id).name:'Cadastro removido'))}${r.category?' · '+esc(r.category):''}</div></div><div class="acts" data-w><button class="icb" data-act="fin-del-rule" data-id="${r.id}" aria-label="Excluir regra">${ic('trash')}</button></div></div>`).join('')}</div>`:'<p class="muted small">Nenhuma regra ainda.</p>'}</div>`;
+  if(FT==='contas')return h+`<div class="card"><h2>Contas bancárias</h2><p class="small muted" style="margin-bottom:10px">As contas são criadas automaticamente na primeira importação do extrato de cada uma.</p>${D.accounts.length?`<div class="list">${D.accounts.map(a=>{const ts=D.transactions.filter(t=>t.account_id===a.id);return `<div class="li"><div class="m"><div class="t">${esc(a.name)}</div><div class="d">Banco ${esc(a.bank||'—')} · conta ${esc(a.acctid||'—')} · ${ts.length} lançamentos, ${ts.filter(t=>t.status==='pendente').length} a classificar${a.last_import?' · última importação '+fts(a.last_import):''}</div></div><div class="rt"><div class="a">${a.balance!=null?money(a.balance):'—'}</div><div class="d small muted">${a.balance_date?'saldo em '+fdate(a.balance_date):''}</div></div><div class="acts" data-w><button class="icb" data-act="fin-acc-edit" data-id="${a.id}" aria-label="Renomear conta">${ic('edit')}</button></div></div>`}).join('')}</div>`:'<p class="muted small">Nenhuma conta ainda. Importe um extrato.</p>'}</div>`;
+  return h;
+}
+function finSelectSilent(id){const t=txOf(id);if(!t)return;const was=innerWidth;SEL=id;const s=suggest(t),p=s.project_id&&proj(s.project_id);
+  FS={id,kind:s.kind==='projeto'?(p?kindOf(p):'obra'):(s.kind||'obra'),project_id:s.kind==='projeto'?s.project_id:'',center:s.center||(s.kind==='empresa'?centers()[0]:''),category:s.category||'',supplier:t.amount<0?payee(t.desc).split(' ').slice(0,4).join(' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'',link:s.link||null,useLink:!!s.link,split:false,splits:[],rule:!s.rule&&!!payee(t.desc)&&s.src!=='regra'&&(s.kind==='empresa'||s.src==='histórico'),ruleText:payee(t.desc).split(' ').slice(0,3).join(' '),q:'',quick:false,src:s.src||''}}
+
 /* --- dashboard --- */
 function vDash(){
   const T=totals();
@@ -363,18 +682,20 @@ function drawCharts(){
 
 /* --- obras --- */
 function vObras(){
-  let h=`<div class="head"><div><h1>Minhas Obras</h1><p class="sub">${D.projects.length} ${D.projects.length===1?'obra cadastrada':'obras cadastradas'}, incluindo as antigas</p></div><button class="btn dark" data-act="new-project" data-w>${ic('plus')} Nova obra</button></div>`;
+  const cnt=k=>D.projects.filter(p=>kindOf(p)===k).length;
+  let h=`<div class="head"><div><h1>Minhas Obras</h1><p class="sub">${cnt('obra')} obras, ${cnt('servico')} serviços e ${cnt('venda')} vendas, incluindo as antigas</p></div><div class="row"><button class="btn dark" data-act="new-project" data-w>${ic('plus')} Nova obra</button><button class="btn" data-act="new-kind" data-id="servico" data-w>${ic('plus')} Serviço</button><button class="btn" data-act="new-kind" data-id="venda" data-w>${ic('plus')} Venda</button></div></div>
+  <div class="chips kfilter">${[['','Todos'],['obra','Obras'],['servico','Serviços'],['venda','Vendas']].map(([k,l])=>`<button type="button" class="chip${PF.kind===k?' on':''}" data-act="pf-kind" data-id="${k}">${l}</button>`).join('')}</div>`;
   if(!D.projects.length)return h+emptyStart();
   h+=`<div class="row"><input type="search" id="pf-q" placeholder="Buscar por nome, código, cliente ou cidade" value="${esc(PF.q)}" style="flex:1;min-width:200px" data-pf="q"><select id="pf-status" data-pf="status" style="width:auto"><option value="">Todos os status</option>${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${PF.status===k?' selected':''}>${v}</option>`).join('')}</select></div>`;
   return h+`<div class="grid g3" id="plist">${projCards()}</div>`;
 }
 function projCards(){
   const q=PF.q.toLowerCase();
-  const l=D.projects.filter(p=>(!PF.status||p.status===PF.status)&&(!q||[p.name,p.code,p.city,(cli(p.client_id)||{}).name].join(' ').toLowerCase().includes(q))).sort((a,b)=>(b.created_at||0)-(a.created_at||0));
+  const l=D.projects.filter(p=>(!PF.kind||kindOf(p)===PF.kind)&&(!PF.status||p.status===PF.status)&&(!q||[p.name,p.code,p.city,(cli(p.client_id)||{}).name].join(' ').toLowerCase().includes(q))).sort((a,b)=>(b.created_at||0)-(a.created_at||0));
   if(!l.length)return `<p class="muted">Nenhuma obra encontrada com esse filtro.</p>`;
   return l.map(p=>{const c=calc(p),u=c.planned>0?Math.min(100,c.cost/c.planned*100):0,k=pcol(p);return `<a class="card pcard" href="#obra-${p.id}" style="background:${k.bg};border:1px solid ${k.bd}">
    <div class="top"><div><div class="small muted">${dot(p)}${esc(p.code)}</div><div class="nm">${esc(p.name)}</div><div class="small ink2">${esc((cli(p.client_id)||{}).name||'Sem cliente')}</div></div></div>
-   <div class="row">${statusPill(p)}${flags(c)}</div>
+   <div class="row">${kindOf(p)!=='obra'?`<span class="pill k-${kindOf(p)}">${KIND[kindOf(p)].n}</span>`:''}${statusPill(p)}${flags(c)}</div>
    <div class="figs"><div class="fig"><span>Contratado</span><b>${money(c.contracted).replace(" ","&nbsp;")}</b></div><div class="fig"><span>Custo</span><b>${money(c.cost).replace(" ","&nbsp;")}</b></div><div class="fig"><span>Lucro</span><b class="${sgn(c.profit)}">${money(c.profit).replace(" ","&nbsp;")}</b></div></div>
    <div><div class="bar${c.overCost?' over':''}" style="background:rgba(255,255,255,.7)"><i style="width:${u}%;${c.overCost?'':'background:'+k.fg}"></i></div><div class="small muted" style="margin-top:5px">${c.planned>0?pct(c.cost/c.planned*100)+' do custo previsto':'Sem custo previsto'} · ${p.planned_end?'prazo '+fdate(p.planned_end):'sem prazo'}</div></div></a>`}).join('');
 }
@@ -461,6 +782,11 @@ function vConf(){
    <div class="card"><h2>Empresa</h2><form data-form="company" class="form">${fld('Nome da empresa','company',D.settings.company,{full:true})}${fld('CNPJ ou CPF','company_doc',D.settings.company_doc)}${fld('Telefone','company_phone',D.settings.company_phone,{type:'tel'})}${fld('Endereço','company_address',D.settings.company_address,{full:true})}${fld('Responsável técnico','company_resp',D.settings.company_resp,{full:true,ph:'Nome e registro profissional, ex.: CREA'})}<div class="full row" style="justify-content:space-between"><p class="small muted">Aparece nos relatórios, no termo de conclusão e na página do cliente.</p><button class="btn dark" data-w>Salvar</button></div></form></div>
    <div class="card"><h2>Aplicativo</h2><p class="ink2 small" style="margin-bottom:12px">${standalone()?'Você está usando o aplicativo instalado.':'Instale o OBRA CONTROL no celular ou no computador. Ele abre em tela própria, com ícone, e usa a mesma conta e os mesmos dados.'}</p>${standalone()?'':`<button class="btn dark" data-act="install">${ic('down')} Instalar aplicativo</button>`}</div>
    <div class="card"><h2>Demonstração</h2><p class="ink2 small" style="margin-bottom:12px">Carrega obras fictícias para conhecer o aplicativo. Os dados de demonstração ficam só na tela, nunca se misturam com os seus e somem ao sair.</p>${isDemo()?`<button class="btn" data-act="demo-off">Sair da demonstração</button>`:`<button class="btn" data-act="demo-on">Abrir modo demonstração</button>`}</div>
+   <div class="card"><h2>Financeiro da empresa</h2><p class="small muted" style="margin-bottom:10px">Centros e categorias para os custos que não pertencem a uma obra, serviço ou venda.</p>
+    <h3 style="margin-bottom:8px">Centros</h3><div class="chips" style="margin-bottom:10px">${centers().map(c=>`<span class="pill s-aprovada">${esc(c)} <button class="icb" style="padding:0" data-act="del-center" data-id="${esc(c)}" data-w aria-label="Remover ${esc(c)}">${ic('x')}</button></span>`).join('')}</div>
+    <form data-form="center" class="row" data-w style="margin-bottom:16px"><input type="text" name="v" id="new-center" placeholder="Novo centro" maxlength="40" style="flex:1;min-width:140px"><button class="btn">Adicionar</button></form>
+    <h3 style="margin-bottom:8px">Categorias de custo fixo</h3><div class="chips" style="margin-bottom:10px">${companyCats().map(c=>`<span class="pill">${esc(c)} <button class="icb" style="padding:0" data-act="del-ccat" data-id="${esc(c)}" data-w aria-label="Remover ${esc(c)}">${ic('x')}</button></span>`).join('')}</div>
+    <form data-form="ccat" class="row" data-w><input type="text" name="v" id="new-ccat" placeholder="Nova categoria" maxlength="40" style="flex:1;min-width:140px"><button class="btn">Adicionar</button></form></div>
    <div class="card"><h2>Categorias de despesa</h2><div class="chips" style="margin-bottom:12px">${CATS.map(c=>`<span class="pill">${esc(c)}</span>`).join('')}${custom.map(c=>`<span class="pill s-andamento">${esc(c)} <button class="icb" style="padding:0" data-act="del-cat" data-id="${esc(c)}" data-w aria-label="Remover ${esc(c)}">${ic('x')}</button></span>`).join('')}</div>
     <form data-form="cat" class="row" data-w><input type="text" id="newcat" name="cat" placeholder="Nova categoria" style="flex:1;min-width:160px" maxlength="40"><button class="btn dark">Adicionar</button></form></div>
    <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2>Clientes</h2><button class="btn" data-act="new-client" data-w>${ic('plus')} Novo cliente</button></div>
@@ -742,16 +1068,17 @@ function formClient(id){
     await put('clients',readClient(v,old));toast('Cliente salvo.');
   }});
 }
-function formProject(id){
-  const old=id&&proj(id),p=old||{status:'orcamento',state:'TO'};
+function formProject(id,kindNew){
+  const old=id&&proj(id),kind=old?kindOf(old):(KIND[kindNew]?kindNew:'obra'),p=old||{status:kind==='obra'?'orcamento':'andamento',state:'TO',kind};
   const copts=[['','Selecione o cliente'],...D.clients.map(c=>[c.id,c.name]),['__new','+ Cadastrar novo cliente']];
-  modal({title:old?'Editar obra':'Nova obra',wide:true,submit:old?'Salvar alterações':'Cadastrar obra',body:`<div class="form">
+  modal({title:old?'Editar '+KIND[kind].n.toLowerCase():KIND[kind].novo,wide:true,submit:old?'Salvar alterações':'Cadastrar',body:`<div class="form">
+   <div class="full"><span class="small" style="font-weight:600;color:var(--ink-2)">Tipo</span><div class="seg" role="radiogroup" aria-label="Tipo de cadastro">${Object.entries(KIND).map(([k,v])=>`<label><input type="radio" name="kind" value="${k}"${kind===k?' checked':''}><span>${v.n}</span></label>`).join('')}</div></div>
    <h3>Cliente</h3>${fld('Cliente','client_id',p.client_id||(D.clients.length?'':'__new'),{type:'select',opts:copts,full:true,req:true})}<div class="form full" id="newcli" ${(p.client_id||D.clients.length)?'hidden':''}>${clientFields()}</div>
-   <h3>Obra</h3>${fld('Nome da obra','name',p.name,{full:true,req:true})}${fld('Código de identificação','code',old?p.code:nextCode()+' (automático)',{})}${fld('Status','status',p.status,{type:'select',opts:Object.entries(STATUS).filter(([k])=>old?true:k!=='concluida')})}
+   <h3>Dados</h3>${fld('Nome','name',p.name,{full:true,req:true,ph:kind==='venda'?'Ex.: Kit padrão de entrada':kind==='servico'?'Ex.: Manutenção de quadro elétrico':''})}${fld('Código de identificação','code',old?p.code:nextCode(kind)+' (automático)',{})}${fld('Status','status',p.status,{type:'select',opts:Object.entries(STATUS).filter(([k])=>old?true:k!=='concluida')})}
    ${fld('Endereço completo','address',p.address,{full:true})}${fld('Cidade','city',p.city)}${fld('Estado','state',p.state,{type:'select',opts:UFS})}
    ${fld('Descrição dos serviços','description',p.description,{type:'textarea',full:true})}${fld('Responsável pela obra','responsible',p.responsible)}${fld('Data do contrato','contract_date',p.contract_date,{type:'date'})}
    <div class="full"><span class="small" style="font-weight:600;color:var(--ink-2)">Cor da obra</span><div class="swatches" role="radiogroup" aria-label="Cor da obra">${PCOL.map(k=>`<label class="sw" title="${k.n}"><input type="radio" name="color" value="${k.k}"${pcol(old||{id:'novo'+D.projects.length}).k===k.k?' checked':''}><span style="background:${k.bg};border-color:${k.bd}"><i style="background:${k.fg}"></i></span>${k.n}</label>`).join('')}</div></div>
-   <h3>Valores</h3>${fld('Valor total contratado','contract_value',p.contract_value,{type:'money'})}${fld('Custo previsto','planned_cost',p.planned_cost,{type:'money'})}<div class="full ink2 small">Lucro previsto: <b id="plucro" class="num">—</b></div>
+   <h3>Valores</h3>${fld(kind==='venda'?'Valor da venda':'Valor total contratado','contract_value',p.contract_value,{type:'money'})}${fld(kind==='venda'?'Custo do material':'Custo previsto','planned_cost',p.planned_cost,{type:'money'})}<div class="full ink2 small">Lucro previsto: <b id="plucro" class="num">—</b></div>
    <h3>Prazos</h3>${fld('Data prevista de início','planned_start',p.planned_start,{type:'date'})}${fld('Data prevista de conclusão','planned_end',p.planned_end,{type:'date'})}${fld('Data real de início','real_start',p.real_start,{type:'date'})}${fld('Data real de conclusão','real_end',p.real_end,{type:'date'})}</div>`,
    onSubmit:async(f,msg)=>{
     const v=vals(f);
@@ -764,11 +1091,12 @@ function formProject(id){
     let cid=v.client_id;
     if(cid==='__new'){const c=readClient(v);await put('clients',c);cid=c.id}
     const cv=mval(v.contract_value),pc=mval(v.planned_cost);
-    const o={...(old||{id:uid('p'),code:nextCode(),created_at:Date.now(),progress:0}),client_id:cid,name:v.name,status:old&&old.status==='concluida'?'concluida':v.status,address:v.address,city:v.city,state:v.state,description:v.description,responsible:v.responsible,contract_date:v.contract_date,contract_value:cv,planned_cost:pc,planned_profit:cv-pc,planned_start:v.planned_start,planned_end:v.planned_end,real_start:v.real_start,real_end:v.real_end,color:v.color||pcol(old||{}).k,updated_at:Date.now()};
+    const nk=KIND[v.kind]?v.kind:kind;
+    const o={...(old||{id:uid('p'),code:nextCode(nk),created_at:Date.now(),progress:0}),kind:nk,client_id:cid,name:v.name,status:old&&old.status==='concluida'?'concluida':v.status,address:v.address,city:v.city,state:v.state,description:v.description,responsible:v.responsible,contract_date:v.contract_date,contract_value:cv,planned_cost:pc,planned_profit:cv-pc,planned_start:v.planned_start,planned_end:v.planned_end,real_start:v.real_start,real_end:v.real_end,color:v.color||pcol(old||{}).k,updated_at:Date.now()};
     if(o.status==='andamento'&&!o.real_start)o.real_start=today();
     await put('projects',o);
     if(old){const ch=diff(old,o,{name:'nome',status:'status',contract_value:'valor contratado',planned_cost:'custo previsto',planned_start:'início previsto',planned_end:'conclusão prevista',real_start:'início real',real_end:'conclusão real',responsible:'responsável'});await log('obra','editou',o.id,'Obra editada'+(ch?': '+ch:''),o.id)}
-    else{await log('obra','criou',o.id,`Obra cadastrada: ${o.name} (${o.code})`,o.id);location.hash='obra-'+o.id}
+    else{await log('obra','criou',o.id,`${KIND[nk].n} cadastrada: ${o.name} (${o.code})`,o.id);location.hash='obra-'+o.id}
     toast('Obra salva.');
    }});
   const f=$('form',M);$('#fi-code',f).disabled=true;
@@ -964,6 +1292,29 @@ const ACT={
   'finalize':id=>formFinalize(id),'reopen':id=>formReopen(id),
   'pdf':id=>exportPdf(id),'xlsx':id=>exportXlsx(id),'xlsx-all':()=>exportXlsx(),
   'tab':id=>{tab=id;render()},
+  'new-kind':k=>formProject(null,k),
+  'pf-kind':k=>{PF.kind=k||'';render()},
+  'fin-tab':t=>{FT=t;render()},
+  'fin-import':()=>{const i=$('#ofx-in');if(i)i.click()},
+  'fin-sel':id=>finSelect(id),
+  'fin-kind':k=>{finSetKind(k)},
+  'fin-confirm':()=>finConfirm(),
+  'fin-skip':()=>finNext(true),
+  'fin-transfer':()=>{finSetKind('transferencia')},
+  'fin-ignore':()=>finIgnore(),
+  'fin-link':()=>{FS.useLink=!FS.useLink;finPanel()},
+  'fin-split':()=>{finToggleSplit()},
+  'fin-split-add':()=>{FS.splits.push({dest:'',category:'',amount:0});finPanel()},
+  'fin-split-del':i=>{FS.splits.splice(+i,1);finPanel()},
+  'fin-quick':()=>{FS.quick=!FS.quick;finPanel()},
+  'fin-quick-save':()=>finQuickSave(),
+  'fin-undo':id=>finUndo(id),
+  'fin-apply':()=>finApplyAll(),
+  'fin-del-rule':id=>{confirmBox('Excluir regra','A regra deixa de sugerir destinos. Lançamentos já classificados não mudam.','Excluir',async()=>{await del('rules',id)})},
+  'fin-acc-edit':id=>finAccEdit(id),
+  'fin-month':()=>{},
+  'del-center':c=>putSettings({...D.settings,centers:centers().filter(x=>x!==c)}).catch(e=>toast(errText(e))),
+  'del-ccat':c=>putSettings({...D.settings,company_cats:companyCats().filter(x=>x!==c)}).catch(e=>toast(errText(e))),
   'share':id=>shareModal(id),
   'share-revoke':id=>revokeShare(id),
   'share-copy':async()=>{const i=$('#share-url');try{await navigator.clipboard.writeText(i.value);toast('Link copiado.')}catch(e){i.select();toast('Selecione e copie o link.')}},
@@ -974,7 +1325,7 @@ const ACT={
   'ftog':(id,el)=>{FOPEN=!FOPEN;el.closest('.filters').classList.toggle('open',FOPEN)},
   'demo-on':()=>{DEMO=demoData();D=DEMO;location.hash='dashboard';render()},
   'demo-off':()=>{D=LIVE;DEMO=null;location.hash='dashboard';render()},
-  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
+  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#financeiro" data-act="close">${ic('bank')}Financeiro</a><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
   'new-client':()=>formClient(),'edit-client':id=>formClient(id),
   'del-client':id=>{const c=cli(id);if(D.projects.some(p=>p.client_id===id)){modal({title:'Cliente com obras',body:'<p class="ink2">Este cliente tem obras cadastradas e não pode ser excluído.</p>',cancel:'Entendi'});return}
     confirmBox('Excluir cliente',c.name,'Excluir',async()=>{await del('clients',id)})},
@@ -989,7 +1340,7 @@ document.addEventListener('click',e=>{
   const a=b.dataset.act;
   if(b.tagName!=='A')e.preventDefault();
   if(a==='close'){closeModal();return}
-  if(M.contains(b)&&!['att','share-copy'].includes(a))closeModal();
+  if(M.contains(b)&&!['att','share-copy'].includes(a)&&!(a.startsWith('fin-')&&a!=='fin-tab'))closeModal();
   if(ACT[a])ACT[a](b.dataset.id,b);
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#light').hidden)$('#light').hidden=true;else if(!M.hidden)closeModal()}});
@@ -999,6 +1350,9 @@ document.addEventListener('input',e=>{
   if(t.dataset.f==='q'){F.q=t.value;$('#elist').innerHTML=expBlock()}
   if(t.dataset.pf==='q'){PF.q=t.value;$('#plist').innerHTML=projCards()}
   if(t.dataset.progress)$('#progv').textContent=t.value+'%';
+  if(t.id==='fin-q'){FS.q=t.value;const l=t.closest('#fin-panel')&&t.closest('#fin-panel').querySelector('#fdest-list');if(l)l.innerHTML=finDestList()}
+  if(t.dataset.fin==='samount'){FS.splits[+t.dataset.i].amount=mval(t.value);const e=t.closest('#fin-panel')&&t.closest('#fin-panel').querySelector('#fin-sum');if(e)e.outerHTML=finSumHTML()}
+  if(t.id==='fin-txq'){FTQ=t.value;const l=$('#fin-done');if(l)l.innerHTML=finDoneRows()}
 });
 document.addEventListener('change',async e=>{
   const t=e.target;
@@ -1010,6 +1364,8 @@ document.addEventListener('change',async e=>{
       if(s==='concluida'){t.value=p.status;formFinalize(p.id);return}
       const o={...p,status:s,updated_at:Date.now()};if(s==='andamento'&&!o.real_start)o.real_start=today();
       await put('projects',o);await log('obra','editou',p.id,`Status alterado de ${STATUS[p.status]} para ${STATUS[s]}`,p.id)}
+    if(t.id==='ofx-in'){const files=[...t.files];t.value='';if(files.length)await finImport(files);return}
+    if(t.dataset.fin){finField(t);return}
     if(t.dataset.docup){const pid=t.dataset.docup,files=[...t.files];t.value='';toast('Enviando…');
       for(const a of await upload(files,'doc')){await put('documents',{id:uid('d'),project_id:pid,asset:a.id,name:a.name,type:a.type,size:a.size,created_at:Date.now()});await log('documento','criou',pid,`Documento anexado: ${a.name}`)}
       toast('Documento anexado.')}
@@ -1018,6 +1374,8 @@ document.addEventListener('change',async e=>{
 document.addEventListener('submit',async e=>{
   const f=e.target,k=f.dataset.form;if(!k)return;e.preventDefault();
   if(k==='auth'){authSubmit(f);return}
+  if(k==='center'||k==='ccat'){const v=(f.elements.v.value||'').trim();if(!v)return;const list=k==='center'?centers():companyCats();if(list.some(x=>x.toLowerCase()===v.toLowerCase())){toast('Já existe.');return}
+    try{await putSettings({...D.settings,[k==='center'?'centers':'company_cats']:[...list,v]});toast('Adicionado.')}catch(err){toast(errText(err))}return}
   try{
     if(k==='company'){const v=vals(f);await putSettings({...D.settings,company:v.company||'',company_doc:v.company_doc||'',company_phone:v.company_phone||'',company_address:v.company_address||'',company_resp:v.company_resp||''});toast('Dados da empresa salvos.')}
     if(k==='cat'){const c=f.elements.cat.value.trim();if(!c)return;if(allCats().some(x=>x.toLowerCase()===c.toLowerCase())){toast('Essa categoria já existe.');return}

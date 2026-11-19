@@ -55,3 +55,16 @@ create unique index if not exists projects_share_token_key on public.projects(sh
 revoke all on function public.client_view(text) from public;
 grant usage on schema public to anonymous;
 grant execute on function public.client_view(text) to anonymous, authenticated;
+
+-- Financeiro: contas, extrato importado (OFX) e regras de classificação
+create table if not exists public.bank_accounts (id text primary key, user_id text not null default (auth.user_id()), data jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now());
+create table if not exists public.bank_transactions (id text primary key, user_id text not null default (auth.user_id()), account_id text not null references public.bank_accounts(id) on delete cascade, fitid text, data jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now());
+create table if not exists public.finance_rules (id text primary key, user_id text not null default (auth.user_id()), data jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now());
+create unique index if not exists bank_transactions_fitid_key on public.bank_transactions(user_id, account_id, fitid) where fitid is not null;
+alter table public.bank_accounts enable row level security;
+alter table public.bank_transactions enable row level security;
+alter table public.finance_rules enable row level security;
+create policy own_rows on public.bank_accounts for all to authenticated using ((select auth.user_id()) = user_id) with check ((select auth.user_id()) = user_id);
+create policy own_rows on public.finance_rules for all to authenticated using ((select auth.user_id()) = user_id) with check ((select auth.user_id()) = user_id);
+create policy own_rows on public.bank_transactions for all to authenticated using ((select auth.user_id()) = user_id) with check ((select auth.user_id()) = user_id and exists (select 1 from public.bank_accounts a where a.id = account_id and a.user_id = (select auth.user_id())));
+grant select, insert, update, delete on public.bank_accounts, public.bank_transactions, public.finance_rules to authenticated;
