@@ -40,6 +40,8 @@ const I={
  undo:'<path d="M8 6 3 11l5 5"/><path d="M3 11h11a5 5 0 0 1 0 10h-3"/>',
  clip:'<path d="m20 11-8.500 8.500a5 5 0 0 1-7-7L13 4a3.500 3.500 0 0 1 5 5l-8.500 8.500a2 2 0 0 1-3-3L14 7"/>',
  x:'<path d="M6 6l12 12M18 6 6 18"/>',
+ user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+ phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
  more:'<circle cx="5" cy="12" r="1.200"/><circle cx="12" cy="12" r="1.200"/><circle cx="19" cy="12" r="1.200"/>',
  down:'<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'
 };
@@ -264,8 +266,8 @@ async function authCall(fn){let r;try{r=await fn()}catch(e){r={error:e}}if(r&&r.
 /* ---------- render ---------- */
 let raf=0;
 function schedule(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;render()})}
-function route(){const h=(location.hash||'').slice(1)||'dashboard';return h.startsWith('obra-')?{page:'obra',id:h.slice(5)}:h.startsWith('cliente-')?{page:'cliente',id:h.slice(8)}:{page:h}}
-const NAV=[['dashboard','Dashboard','home'],['obras','Minhas Obras','build'],['@new-project','Nova Obra','plus'],['despesas','Lançar Despesa','coin'],['financeiro','Financeiro','bank'],['cronograma','Cronograma','cal'],['relatorios','Relatórios','doc'],['configuracoes','Configurações','gear']];
+function route(){const h=(location.hash||'').slice(1)||'dashboard';return h.startsWith('obra-')?{page:'obra',id:h.slice(5)}:h.startsWith('clientes-')?{page:'clientedet',id:h.slice(9)}:h.startsWith('cliente-')?{page:'cliente',id:h.slice(8)}:{page:h}}
+const NAV=[['dashboard','Dashboard','home'],['obras','Minhas Obras','build'],['clientes','Clientes','user'],['@new-project','Nova Obra','plus'],['despesas','Lançar Despesa','coin'],['financeiro','Financeiro','bank'],['cronograma','Cronograma','cal'],['relatorios','Relatórios','doc'],['configuracoes','Configurações','gear']];
 function render(){
   if(phase==='public'){document.body.classList.add('cview','pub');document.body.classList.remove('authp');$('#auth').hidden=true;$('#view').innerHTML=vPublic();return}
   const r=route();
@@ -273,7 +275,7 @@ function render(){
   if(phase==='auth'){document.body.classList.add('authp');if(AU.dataset.v!==authView){AU.dataset.v=authView;AU.innerHTML=vAuth()}AU.hidden=false;return}
   AU.hidden=true;AU.dataset.v='';document.body.classList.remove('authp');
   document.body.classList.toggle('ro',!canWrite&&!isDemo());document.body.classList.toggle('cview',r.page==='cliente');
-  const on=k=>(r.page===k||(k==='obras'&&r.page==='obra'))?' class="on"':'';
+  const on=k=>(r.page===k||(k==='obras'&&r.page==='obra')||(k==='clientes'&&r.page==='clientedet'))?' class="on"':'';
   $('#side').innerHTML=`<div class="brand"><i></i>OBRA&nbsp;<span>CONTROL</span></div>
    <button class="btn primary big" data-act="new-expense" data-w>${ic('plus')} NOVA DESPESA</button>
    <nav class="nav">${NAV.map(([k,l,i])=>k[0]==='@'?`<button data-act="${k.slice(1)}" data-w>${ic(i)}${l}</button>`:`<a href="#${k}"${on(k)}>${ic(i)}${l}</a>`).join('')}</nav>
@@ -287,11 +289,11 @@ function render(){
   else if(!canWrite)h+=`<div class="banner warn"><span>Seu acesso é somente leitura. Peça ao dono do aplicativo permissão de colaborador para lançar dados.</span></div>`;
   if(phase==='loading'){h+=`<div class="card empty"><b>Carregando seus dados…</b>${slow?'<span>Ainda não foi possível alcançar o armazenamento. Vou continuar tentando.</span>':''}</div>`}
   else{
-    const V={financeiro:vFin,dashboard:vDash,obras:vObras,despesas:vDespesas,cronograma:vCrono,relatorios:vRel,configuracoes:vConf,obra:()=>vObra(r.id),cliente:()=>vCliente(r.id)};
+    const V={clientes:vClientes,clientedet:()=>vClienteDet(r.id),financeiro:vFin,dashboard:vDash,obras:vObras,despesas:vDespesas,cronograma:vCrono,relatorios:vRel,configuracoes:vConf,obra:()=>vObra(r.id),cliente:()=>vCliente(r.id)};
     h+=(V[r.page]||vDash)();
   }
   $('#view').innerHTML=h;
-  if(r.page==='dashboard'||!['obras','despesas','financeiro','cronograma','relatorios','configuracoes','obra','cliente'].includes(r.page))drawCharts();
+  if(r.page==='dashboard'||!['obras','clientes','clientedet','despesas','financeiro','cronograma','relatorios','configuracoes','obra','cliente'].includes(r.page))drawCharts();
   document.querySelectorAll('table.stack').forEach(t=>{const hs=[...t.querySelectorAll('thead th')].map(x=>x.textContent);t.querySelectorAll('tbody tr').forEach(r=>{let i=0;[...r.cells].forEach(c=>{c.dataset.l=c.colSpan>1?'':hs[i]||'';i+=c.colSpan})})});
   fillNames();
 }
@@ -789,8 +791,7 @@ function vConf(){
     <form data-form="ccat" class="row" data-w><input type="text" name="v" id="new-ccat" placeholder="Nova categoria" maxlength="40" style="flex:1;min-width:140px"><button class="btn">Adicionar</button></form></div>
    <div class="card"><h2>Categorias de despesa</h2><div class="chips" style="margin-bottom:12px">${CATS.map(c=>`<span class="pill">${esc(c)}</span>`).join('')}${custom.map(c=>`<span class="pill s-andamento">${esc(c)} <button class="icb" style="padding:0" data-act="del-cat" data-id="${esc(c)}" data-w aria-label="Remover ${esc(c)}">${ic('x')}</button></span>`).join('')}</div>
     <form data-form="cat" class="row" data-w><input type="text" id="newcat" name="cat" placeholder="Nova categoria" style="flex:1;min-width:160px" maxlength="40"><button class="btn dark">Adicionar</button></form></div>
-   <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2>Clientes</h2><button class="btn" data-act="new-client" data-w>${ic('plus')} Novo cliente</button></div>
-    ${D.clients.length?`<div class="list">${D.clients.map(c=>`<div class="li"><div class="m"><div class="t">${esc(c.name)}</div><div class="d">${esc([c.doc,c.phone,c.email].filter(Boolean).join(' · ')||'Sem contato')}</div></div><div class="acts" data-w><button class="icb" data-act="edit-client" data-id="${c.id}" aria-label="Editar">${ic('edit')}</button><button class="icb" data-act="del-client" data-id="${c.id}" aria-label="Excluir">${ic('trash')}</button></div></div>`).join('')}</div>`:'<p class="muted small">Nenhum cliente cadastrado.</p>'}</div>
+   <div class="card"><h2>Clientes</h2><p class="small ink2" style="margin-bottom:12px">${D.clients.length} ${D.clients.length===1?'cliente cadastrado':'clientes cadastrados'}. O cadastro completo, com consulta automática de CNPJ, CPF e CEP, fica na aba Clientes.</p><a class="btn" href="#clientes">${ic('user')} Abrir Clientes</a></div>
    <div class="card" style="grid-column:1/-1"><h2>Sobre os dados</h2><p class="ink2 small">Os registros ficam gravados no banco de dados da sua conta e aparecem iguais no computador e no celular: basta entrar com o mesmo e-mail e senha. Cada conta enxerga apenas os próprios dados. Exclusões e edições ficam registradas no histórico de cada obra.</p>${me?`<p style="margin-top:12px"><b>${esc(me.name||'')}</b> <span class="muted">${esc(me.email||'')}</span></p><button class="btn" style="margin-top:10px" data-act="logout">Sair da conta</button>`:''}</div>
   </div>`;
 }
@@ -1061,15 +1062,98 @@ const vals=f=>Object.fromEntries([...new FormData(f)].filter(([,v])=>typeof v===
 /* ---------- formulários ---------- */
 function clientFields(c={}){return fld('Nome ou razão social','c_name',c.name,{full:true,req:true})+fld('CPF ou CNPJ','c_doc',c.doc)+fld('Telefone','c_phone',c.phone,{type:'tel'})+fld('WhatsApp','c_whatsapp',c.whatsapp,{type:'tel'})+fld('E-mail','c_email',c.email,{type:'email'})}
 const readClient=(v,old)=>({...(old||{id:uid('c'),created_at:Date.now()}),name:v.c_name,doc:v.c_doc,phone:v.c_phone,whatsapp:v.c_whatsapp,email:v.c_email});
-function formClient(id){
-  const old=id&&cli(id);
-  modal({title:old?'Editar cliente':'Novo cliente',body:`<div class="form">${clientFields(old||{})}</div>`,onSubmit:async(f,msg)=>{
-    const v=vals(f);if(!v.c_name){msg('Informe o nome do cliente.');return false}
-    await put('clients',readClient(v,old));toast('Cliente salvo.');
-  }});
+const onlyD=x=>String(x||'').replace(/\D/g,'');
+const fmtTel=x=>{const d=onlyD(x);return d.length===11?`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`:d.length===10?`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`:(x||'')};
+function fmtDoc(x){const d=onlyD(x);if(d.length===11)return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');if(d.length===14)return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5');return x||''}
+function docOk(x){const c=onlyD(x);
+  if(c.length===11){if(/^(\d)\1+$/.test(c))return false;const dv=n=>{let s=0;for(let i=0;i<n;i++)s+=+c[i]*(n+1-i);const r=s*10%11;return r===10?0:r};return dv(9)===+c[9]&&dv(10)===+c[10]}
+  if(c.length===14){if(/^(\d)\1+$/.test(c))return false;const dv=n=>{const w=n===12?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2];let s=0;for(let i=0;i<n;i++)s+=+c[i]*w[i];const r=s%11;return r<2?0:11-r};return dv(12)===+c[12]&&dv(13)===+c[13]}
+  return false}
+async function apiLookup(tipo,doc){
+  if(memory())throw new Error('A consulta automática funciona com a sua conta (fora do modo demonstração).');
+  let tok='';try{const r=await neon.auth.getSession();tok=r&&r.data&&r.data.session&&r.data.session.token||''}catch(e){}
+  const r=await fetch('/api/consulta',{method:'POST',headers:{'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{})},body:JSON.stringify({tipo,doc})});
+  let j={};try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error(j.error||'Não foi possível consultar agora.');
+  return j;
 }
-function formProject(id,kindNew){
-  const old=id&&proj(id),kind=old?kindOf(old):(KIND[kindNew]?kindNew:'obra'),p=old||{status:kind==='obra'?'orcamento':'andamento',state:'TO',kind};
+const CL_F=[['name','cl_name'],['trade_name','cl_trade'],['status_rf','cl_status'],['opened_at','cl_opened'],['activity','cl_activity'],['birth','cl_birth'],['cep','cl_cep'],['street','cl_street'],['number','cl_number'],['complement','cl_complement'],['district','cl_district'],['city','cl_city'],['state','cl_state'],['phone','cl_phone'],['email','cl_email']];
+function formClient(id,after){
+  const old=id&&cli(id),c=old||{};
+  const pj=c.kind?c.kind==='pj':onlyD(c.doc).length!==11;
+  modal({title:old?'Editar cliente':'Novo cliente',wide:true,submit:old?'Salvar alterações':'Cadastrar cliente',body:`<div class="form">
+   <div class="full cl-doc"><label class="f" for="fi-cl_doc">CPF ou CNPJ<input type="text" inputmode="numeric" id="fi-cl_doc" name="cl_doc" value="${esc(fmtDoc(c.doc))}" placeholder="Digite e o restante é preenchido sozinho" autocomplete="off"></label><button type="button" class="btn dark" data-act="cl-lookup">${ic('search')} Consultar</button></div>
+   <p class="full small" id="cl-info" aria-live="polite">${c.lookup_source?`Dados de ${esc(c.lookup_source)} em ${fts(c.lookup_at)}.`:'Para CNPJ, a consulta traz razão social, situação na Receita, endereço e contato. Confira antes de salvar.'}</p>
+   <input type="hidden" name="cl_kind" id="fi-cl_kind" value="${pj?'pj':'pf'}"><input type="hidden" name="cl_src" id="fi-cl_src" value="${esc(c.lookup_source||'')}">
+   <h3>Identificação</h3>${fld('Nome ou razão social','cl_name',c.name,{full:true,req:true})}${fld('Nome fantasia','cl_trade',c.trade_name)}${fld('Situação na Receita','cl_status',c.status_rf)}${fld('Data de abertura','cl_opened',c.opened_at,{type:'date'})}${fld('Data de nascimento','cl_birth',c.birth,{type:'date'})}${fld('Atividade principal','cl_activity',c.activity,{full:true})}
+   <h3>Contato</h3>${fld('Telefone','cl_phone',c.phone,{type:'tel'})}${fld('WhatsApp','cl_whatsapp',c.whatsapp,{type:'tel'})}${fld('E-mail','cl_email',c.email,{type:'email'})}${fld('Pessoa de contato','cl_contact',c.contact,{ph:'Quem fala com você na empresa'})}
+   <h3>Endereço</h3>${fld('CEP','cl_cep',c.cep,{ph:'00000-000'})}${fld('Logradouro','cl_street',c.street)}${fld('Número','cl_number',c.number)}${fld('Complemento','cl_complement',c.complement)}${fld('Bairro','cl_district',c.district)}${fld('Cidade','cl_city',c.city)}${fld('Estado','cl_state',c.state||'TO',{type:'select',opts:UFS})}
+   ${fld('Observações','cl_notes',c.notes,{type:'textarea',full:true})}</div>`,
+   onSubmit:async(f,msg)=>{
+    const v=vals(f);
+    if(!v.cl_name){msg('Informe o nome ou a razão social.');return false}
+    const d=onlyD(v.cl_doc);
+    if(d&&!docOk(d)){msg('CPF ou CNPJ inválido. Confira os números ou deixe em branco.');return false}
+    const dup=d&&D.clients.find(x=>x.id!==(old&&old.id)&&onlyD(x.doc)===d);
+    if(dup){msg(`Já existe um cliente com este documento: ${dup.name}.`);return false}
+    const o={...(old||{id:uid('c'),created_at:Date.now()}),kind:d.length===11?'pf':d.length===14?'pj':(v.cl_kind||'pj'),doc:d?fmtDoc(d):'',name:v.cl_name,trade_name:v.cl_trade,status_rf:v.cl_status,opened_at:v.cl_opened,birth:v.cl_birth,activity:v.cl_activity,phone:fmtTel(v.cl_phone),whatsapp:fmtTel(v.cl_whatsapp),email:v.cl_email,contact:v.cl_contact,cep:v.cl_cep,street:v.cl_street,number:v.cl_number,complement:v.cl_complement,district:v.cl_district,city:v.cl_city,state:v.cl_state,notes:v.cl_notes,updated_at:Date.now()};
+    if(v.cl_src&&(!old||old.lookup_source!==v.cl_src||f.dataset.looked)){o.lookup_source=v.cl_src;o.lookup_at=Date.now()}
+    await put('clients',o);toast('Cliente salvo.');
+    if(after)setTimeout(()=>after(o),60);else if(!old)location.hash='clientes-'+o.id;
+   }});
+  const fm=$('#modal form');if(fm)fm.dataset.cid=old?old.id:'';
+}
+async function clLookup(){
+  const f=$('#modal form');if(!f)return;const info=$('#cl-info',f),b=$('[data-act=cl-lookup]',f),d=onlyD($('#fi-cl_doc',f).value);
+  const say=(t,cls='')=>{info.className='full small '+cls;info.textContent=t};
+  if(d.length!==11&&d.length!==14){say('Digite um CPF (11 números) ou CNPJ (14 números).','neg');return}
+  if(!docOk(d)){say(`${d.length===11?'CPF':'CNPJ'} inválido. Confira os números.`,'neg');return}
+  const dup=D.clients.find(x=>onlyD(x.doc)===d&&x.id!==(f.dataset.cid||''));
+  b.disabled=true;say('Consultando…','muted');
+  try{
+    const r=await apiLookup(d.length===11?'cpf':'cnpj',d),x=r.data||{};
+    let n=0;for(const [k,fid] of CL_F){const el=$('#fi-'+fid,f);if(!el||!x[k])continue;if(el.tagName==='SELECT'){if([...el.options].some(o=>o.value===x[k])){el.value=x[k];n++}}else{el.value=x[k];n++}}
+    $('#fi-cl_doc',f).value=fmtDoc(d);$('#fi-cl_kind',f).value=d.length===11?'pf':'pj';$('#fi-cl_src',f).value=r.source||'';f.dataset.looked='1';
+    const st=(x.status_rf||'').toUpperCase();
+    say(`${n} campos preenchidos com dados de ${r.source||'consulta'}${r.test?' (chave de teste: dados de exemplo)':''}.${st&&st!=='ATIVA'&&d.length===14?` Atenção: situação na Receita "${x.status_rf}".`:''}${dup?` Atenção: já existe um cliente com este documento (${dup.name}).`:''} Confira e complete WhatsApp e contato.`,st&&st!=='ATIVA'&&d.length===14||dup?'warn-t':'pos');
+  }catch(e){say(e.message,'neg')}
+  b.disabled=false;
+}
+async function cepLookup(el){
+  const f=el.closest('form'),d=onlyD(el.value);if(d.length!==8||memory())return;
+  try{const r=await apiLookup('cep',d),x=r.data||{};el.value=x.cep||el.value;for(const [k,fid] of [['street','cl_street'],['district','cl_district'],['city','cl_city'],['state','cl_state']]){const e=$('#fi-'+fid,f);if(e&&x[k]&&!e.value)e.value=x[k]}if(x.state)$('#fi-cl_state',f).value=x.state;const n=$('#fi-cl_number',f);if(n&&!n.value)n.focus()}catch(e){}
+}
+const CF={q:'',kind:''};
+function clientStats(id){const ps=D.projects.filter(p=>p.client_id===id),cs=ps.map(p=>({p,c:calc(p)}));return {ps,n:ps.length,obra:ps.filter(p=>kindOf(p)==='obra').length,servico:ps.filter(p=>kindOf(p)==='servico').length,venda:ps.filter(p=>kindOf(p)==='venda').length,contracted:sum(cs.filter(x=>x.c.counted),x=>x.c.contracted),received:sum(cs,x=>x.c.received),receivable:sum(cs.filter(x=>x.c.counted),x=>x.c.receivable),open:cs.filter(x=>x.c.open).length}}
+function clientRows(){
+  const q=deacc(CF.q),qd=onlyD(CF.q);
+  const l=D.clients.filter(c=>(!CF.kind||(c.kind||(onlyD(c.doc).length===11?'pf':'pj'))===CF.kind)&&(!q||deacc([c.name,c.trade_name,c.city,c.email,c.contact].join(' ')).includes(q)||(qd.length>=3&&onlyD(c.doc+' '+c.phone+' '+c.whatsapp).includes(qd)))).sort((a,b)=>(a.name||'').localeCompare(b.name||'','pt-BR'));
+  if(!l.length)return `<p class="muted small" style="padding:10px 0">${D.clients.length?'Nenhum cliente encontrado com essa busca.':'Nenhum cliente cadastrado ainda.'}</p>`;
+  return l.map(c=>{const st=clientStats(c.id),k=c.kind||(onlyD(c.doc).length===11?'pf':'pj'),bad=c.status_rf&&!/ATIVA/i.test(c.status_rf)&&k==='pj';
+    return `<a class="li clr" href="#clientes-${c.id}"><span class="cav ${k}">${esc((c.trade_name||c.name||'?').trim().slice(0,1).toUpperCase())}</span><div class="m"><div class="t">${esc(c.name)}${c.trade_name&&c.trade_name!==c.name?` <span class="muted small">· ${esc(c.trade_name)}</span>`:''}</div><div class="d">${esc([c.doc||'Sem documento',[c.city,c.state].filter(Boolean).join('/'),c.whatsapp||c.phone].filter(Boolean).join(' · '))}</div><div class="chips" style="margin-top:4px">${bad?`<span class="pill bad">${esc(c.status_rf)}</span>`:''}${st.obra?`<span class="pill k-obra">${st.obra} ${st.obra===1?'obra':'obras'}</span>`:''}${st.servico?`<span class="pill k-servico">${st.servico} ${st.servico===1?'serviço':'serviços'}</span>`:''}${st.venda?`<span class="pill k-venda">${st.venda} ${st.venda===1?'venda':'vendas'}</span>`:''}</div></div><div class="rt"><div class="a">${money(st.contracted)}</div><div class="d small muted">${st.receivable>0?'a receber '+money(st.receivable):'contratado'}</div></div></a>`}).join('');
+}
+function vClientes(){
+  const pj=D.clients.filter(c=>(c.kind||(onlyD(c.doc).length===11?'pf':'pj'))==='pj').length;
+  let h=`<div class="head"><div><h1>Clientes</h1><p class="sub">${D.clients.length} ${D.clients.length===1?'cliente':'clientes'}: ${pj} empresas e ${D.clients.length-pj} pessoas físicas</p></div><button class="btn dark" data-act="new-client" data-w>${ic('plus')} Novo cliente</button></div>`;
+  if(!D.clients.length)return h+`<div class="card empty"><b>Nenhum cliente cadastrado</b><span>Digite o CNPJ ou CPF e o sistema preenche razão social, endereço e contato automaticamente.</span><button class="btn primary" data-act="new-client" data-w>${ic('plus')} Cadastrar primeiro cliente</button></div>`;
+  h+=`<div class="row"><input type="search" id="cf-q" placeholder="Buscar por nome, CNPJ/CPF, cidade, telefone ou e-mail" value="${esc(CF.q)}" style="flex:1;min-width:200px"><div class="chips kfilter">${[['','Todos'],['pj','Empresas'],['pf','Pessoas físicas']].map(([k,l])=>`<button type="button" class="chip${CF.kind===k?' on':''}" data-act="cf-kind" data-id="${k}">${l}</button>`).join('')}</div></div>`;
+  return h+`<div class="card" style="padding:8px 16px"><div class="list" id="cl-list">${clientRows()}</div></div>`;
+}
+function vClienteDet(id){
+  const c=cli(id);if(!c)return `<div class="card empty"><b>Cliente não encontrado</b><a class="btn" href="#clientes">Voltar para Clientes</a></div>`;
+  const st=clientStats(id),k=c.kind||(onlyD(c.doc).length===11?'pf':'pj'),wa=onlyD(c.whatsapp||'');
+  const addr=[[c.street,c.number].filter(Boolean).join(', '),c.complement,c.district,[c.city,c.state].filter(Boolean).join('/'),c.cep].filter(Boolean).join(' · ');
+  const dl=(l,v)=>v?`<div><span>${l}</span><b>${v}</b></div>`:'';
+  let h=`<div class="head"><div><a href="#clientes" class="small muted">‹ Clientes</a><h1>${esc(c.name)}</h1><div class="row" style="margin-top:8px"><span class="small muted">${esc(c.doc||'Sem documento')}</span><span class="pill">${k==='pj'?'Empresa':'Pessoa física'}</span>${c.status_rf?`<span class="pill ${/ATIVA/i.test(c.status_rf)?'s-concluida':'bad'}">${esc(c.status_rf)}</span>`:''}</div></div>
+   <div class="row" data-w><button class="btn ghost danger" data-act="del-client" data-id="${c.id}">${ic('trash')}</button><button class="btn" data-act="edit-client" data-id="${c.id}">${ic('edit')} Editar</button><button class="btn" data-act="cl-new-proj" data-id="${c.id}|venda">${ic('plus')} Venda</button><button class="btn" data-act="cl-new-proj" data-id="${c.id}|servico">${ic('plus')} Serviço</button><button class="btn dark" data-act="cl-new-proj" data-id="${c.id}|obra">${ic('plus')} Nova obra</button></div></div>
+   <div class="grid g4">${kpi('Cadastros',`${st.n}`,`${st.obra} obras · ${st.servico} serviços · ${st.venda} vendas`,'tone-info','build')}${kpi('Valor contratado',money(st.contracted),'Contratos fechados','tone-info','doc')}${kpi('Recebido',money(st.received),'Total já pago pelo cliente','tone-pos','coin')}${kpi('A receber',money(st.receivable),st.open?`${st.open} em aberto`:'Nada em aberto','tone-warn','cal')}</div>
+   <div class="grid g2"><div class="card"><h2>Dados do cliente</h2><div class="dl">${dl(k==='pj'?'Razão social':'Nome',esc(c.name))}${dl('Nome fantasia',esc(c.trade_name||''))}${dl(k==='pj'?'CNPJ':'CPF',esc(c.doc||''))}${dl('Abertura',c.opened_at?fdate(c.opened_at):'')}${dl('Nascimento',c.birth?fdate(c.birth):'')}${dl('Atividade principal',esc(c.activity||''))}${addr?`<div style="grid-column:1/-1"><span>Endereço</span><b style="font-weight:500">${esc(addr)}</b></div>`:''}${c.notes?`<div style="grid-column:1/-1"><span>Observações</span><b style="font-weight:500">${esc(c.notes)}</b></div>`:''}</div>${c.lookup_source?`<p class="small muted" style="margin-top:12px">Consultado em ${esc(c.lookup_source)} em ${fts(c.lookup_at)}.</p>`:''}</div>
+   <div class="card"><h2>Contato</h2><div class="list">${c.contact?`<div class="li"><div class="m"><div class="d">Pessoa de contato</div><div class="t">${esc(c.contact)}</div></div></div>`:''}${c.whatsapp?`<div class="li"><div class="m"><div class="d">WhatsApp</div><div class="t">${esc(c.whatsapp)}</div></div>${wa?`<a class="btn" href="https://wa.me/${wa.length<=11?'55'+wa:wa}" target="_blank" rel="noopener">Abrir conversa</a>`:''}</div>`:''}${c.phone?`<div class="li"><div class="m"><div class="d">Telefone</div><div class="t">${esc(c.phone)}</div></div><a class="btn" href="tel:${onlyD(c.phone)}">Ligar</a></div>`:''}${c.email?`<div class="li"><div class="m"><div class="d">E-mail</div><div class="t">${esc(c.email)}</div></div><a class="btn" href="mailto:${esc(c.email)}">Enviar e-mail</a></div>`:''}${!c.contact&&!c.whatsapp&&!c.phone&&!c.email?'<p class="muted small">Nenhum contato cadastrado. Use Editar para completar.</p>':''}</div></div></div>
+   <div class="card"><h2>Obras, serviços e vendas</h2>${st.ps.length?`<div class="grid g3">${st.ps.sort((a,b)=>(b.created_at||0)-(a.created_at||0)).map(p=>{const pc=calc(p),kk=pcol(p);return `<a class="card pcard" href="#obra-${p.id}" style="background:${kk.bg};border:1px solid ${kk.bd}"><div class="small muted">${dot(p)}${esc(p.code)}</div><div class="nm">${esc(p.name)}</div><div class="row">${kindOf(p)!=='obra'?`<span class="pill k-${kindOf(p)}">${KIND[kindOf(p)].n}</span>`:''}${statusPill(p)}</div><div class="figs"><div class="fig"><span>Contratado</span><b>${money(pc.contracted).replace(' ','&nbsp;')}</b></div><div class="fig"><span>Recebido</span><b>${money(pc.received).replace(' ','&nbsp;')}</b></div><div class="fig"><span>A receber</span><b>${money(pc.receivable).replace(' ','&nbsp;')}</b></div></div></a>`}).join('')}</div>`:'<p class="muted small">Nenhum cadastro para este cliente ainda.</p>'}</div>`;
+  return h;
+}
+function formProject(id,kindNew,clientId){
+  const old=id&&proj(id),kind=old?kindOf(old):(KIND[kindNew]?kindNew:'obra'),p=old||{status:kind==='obra'?'orcamento':'andamento',state:(cli(clientId)||{}).state||'TO',city:(cli(clientId)||{}).city||'',kind,client_id:clientId||''};
   const copts=[['','Selecione o cliente'],...D.clients.map(c=>[c.id,c.name]),['__new','+ Cadastrar novo cliente']];
   modal({title:old?'Editar '+KIND[kind].n.toLowerCase():KIND[kind].novo,wide:true,submit:old?'Salvar alterações':'Cadastrar',body:`<div class="form">
    <div class="full"><span class="small" style="font-weight:600;color:var(--ink-2)">Tipo</span><div class="seg" role="radiogroup" aria-label="Tipo de cadastro">${Object.entries(KIND).map(([k,v])=>`<label><input type="radio" name="kind" value="${k}"${kind===k?' checked':''}><span>${v.n}</span></label>`).join('')}</div></div>
@@ -1325,10 +1409,13 @@ const ACT={
   'ftog':(id,el)=>{FOPEN=!FOPEN;el.closest('.filters').classList.toggle('open',FOPEN)},
   'demo-on':()=>{DEMO=demoData();D=DEMO;location.hash='dashboard';render()},
   'demo-off':()=>{D=LIVE;DEMO=null;location.hash='dashboard';render()},
-  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#financeiro" data-act="close">${ic('bank')}Financeiro</a><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
+  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#clientes" data-act="close">${ic('user')}Clientes</a><a href="#financeiro" data-act="close">${ic('bank')}Financeiro</a><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
   'new-client':()=>formClient(),'edit-client':id=>formClient(id),
-  'del-client':id=>{const c=cli(id);if(D.projects.some(p=>p.client_id===id)){modal({title:'Cliente com obras',body:'<p class="ink2">Este cliente tem obras cadastradas e não pode ser excluído.</p>',cancel:'Entendi'});return}
-    confirmBox('Excluir cliente',c.name,'Excluir',async()=>{await del('clients',id)})},
+  'cl-lookup':()=>clLookup(),
+  'cf-kind':k=>{CF.kind=k||'';render()},
+  'cl-new-proj':v=>{const [cid,k]=String(v).split('|');formProject(null,k,cid)},
+  'del-client':id=>{const c=cli(id);if(D.projects.some(p=>p.client_id===id)){modal({title:'Cliente com cadastros',body:'<p class="ink2">Este cliente tem obras, serviços ou vendas cadastrados e não pode ser excluído.</p>',cancel:'Entendi'});return}
+    confirmBox('Excluir cliente',c.name,'Excluir',async()=>{await del('clients',id);if(location.hash==='#clientes-'+id)location.hash='clientes'})},
   'del-cat':id=>putSettings({...D.settings,categories:(D.settings.categories||[]).filter(c=>c!==id)}).catch(e=>toast(errText(e))),
   'del-doc':id=>{const d=D.documents.find(x=>x.id===id);confirmBox('Excluir documento',d.name+'. O arquivo sai da lista da obra e a exclusão fica no histórico.','Excluir',async()=>{await put('documents',{...d,deleted:true});await log('documento','excluiu',d.project_id,`Documento removido: ${d.name}`)})},
   'att':(id,el)=>{const url=new URL('/_blob/'+id,location.href).href;if(/^image\//.test(el.dataset.type)){$('#light').innerHTML=`<img src="${esc(url)}" alt="Anexo">`;$('#light').hidden=false}else{const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove()}}
@@ -1340,7 +1427,7 @@ document.addEventListener('click',e=>{
   const a=b.dataset.act;
   if(b.tagName!=='A')e.preventDefault();
   if(a==='close'){closeModal();return}
-  if(M.contains(b)&&!['att','share-copy'].includes(a)&&!(a.startsWith('fin-')&&a!=='fin-tab'))closeModal();
+  if(M.contains(b)&&!['att','share-copy','cl-lookup'].includes(a)&&!(a.startsWith('fin-')&&a!=='fin-tab'))closeModal();
   if(ACT[a])ACT[a](b.dataset.id,b);
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#light').hidden)$('#light').hidden=true;else if(!M.hidden)closeModal()}});
@@ -1350,6 +1437,8 @@ document.addEventListener('input',e=>{
   if(t.dataset.f==='q'){F.q=t.value;$('#elist').innerHTML=expBlock()}
   if(t.dataset.pf==='q'){PF.q=t.value;$('#plist').innerHTML=projCards()}
   if(t.dataset.progress)$('#progv').textContent=t.value+'%';
+  if(t.id==='cf-q'){CF.q=t.value;$('#cl-list').innerHTML=clientRows()}
+  if(t.id==='fi-cl_doc'){const d=onlyD(t.value);if((d.length===14||d.length===11)&&docOk(d)&&t.dataset.auto!==d){t.dataset.auto=d;clLookup()}}
   if(t.id==='fin-q'){FS.q=t.value;const l=t.closest('#fin-panel')&&t.closest('#fin-panel').querySelector('#fdest-list');if(l)l.innerHTML=finDestList()}
   if(t.dataset.fin==='samount'){FS.splits[+t.dataset.i].amount=mval(t.value);const e=t.closest('#fin-panel')&&t.closest('#fin-panel').querySelector('#fin-sum');if(e)e.outerHTML=finSumHTML()}
   if(t.id==='fin-txq'){FTQ=t.value;const l=$('#fin-done');if(l)l.innerHTML=finDoneRows()}
@@ -1364,6 +1453,7 @@ document.addEventListener('change',async e=>{
       if(s==='concluida'){t.value=p.status;formFinalize(p.id);return}
       const o={...p,status:s,updated_at:Date.now()};if(s==='andamento'&&!o.real_start)o.real_start=today();
       await put('projects',o);await log('obra','editou',p.id,`Status alterado de ${STATUS[p.status]} para ${STATUS[s]}`,p.id)}
+    if(t.id==='fi-cl_cep'){cepLookup(t);return}
     if(t.id==='ofx-in'){const files=[...t.files];t.value='';if(files.length)await finImport(files);return}
     if(t.dataset.fin){finField(t);return}
     if(t.dataset.docup){const pid=t.dataset.docup,files=[...t.files];t.value='';toast('Enviando…');
