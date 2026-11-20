@@ -1,12 +1,22 @@
 
+/* Montserrat (OFL) hospedada no próprio app, da pasta oficial da marca Moura */
+@font-face{font-family:"Montserrat";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/montserrat-400.woff2) format("woff2")}
+@font-face{font-family:"Montserrat";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/montserrat-500.woff2) format("woff2")}
+@font-face{font-family:"Montserrat";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/montserrat-600.woff2) format("woff2")}
+@font-face{font-family:"Montserrat";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/montserrat-700.woff2) format("woff2")}
+@font-face{font-family:"Montserrat";font-style:normal;font-weight:800;font-display:swap;src:url(/fonts/montserrat-800.woff2) format("woff2")}
+@font-face{font-family:"Montserrat";font-style:normal;font-weight:900;font-display:swap;src:url(/fonts/montserrat-900.woff2) format("woff2")}
 /* Layout: barra lateral fixa + coluna de conteúdo em cards; no celular, barra inferior com botão central de despesa. Tema único claro, por escolha da marca. */
 :root{
-  --bg:#F7F8FA; --surface:#FFFFFF; --ink:#202124; --ink-2:#5A5F68; --muted:#8A8F98;
-  --accent:#F15623; --accent-soft:#FDEDE7; --pos:#1B9A5E; --pos-soft:#E6F5EC; --neg:#D83A3A; --neg-soft:#FCEBEB;
-  --warn:#B7791F; --warn-soft:#FBF3E0; --info:#2F6FDE; --info-soft:#E9F0FD;
-  --line:#E8EAEE; --line-2:#F0F1F4;
-  --display:"Manrope","Figtree",system-ui,sans-serif; --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --r:16px; --r-sm:10px; --shadow:0 1px 2px rgba(32,33,36,.04),0 6px 20px rgba(32,33,36,.04);
+  /* Identidade Moura Soluções Elétricas (Design System v1.1) */
+  --bg:#F4F4F5; --surface:#FFFFFF; --ink:#231F20; --ink-2:#58595B; --muted:#6D6E71;
+  --accent:#F15623; --accent-strong:#C44018; --accent-hover:#A33512; --accent-soft:#FDEBE3;
+  --yellow:#FDB813; --yellow-soft:#FFF5D9; --yellow-2:#FFEBC4;
+  --pos:#1B8A55; --pos-soft:#E5F4EC; --neg:#D0342C; --neg-soft:#FCEBEA;
+  --warn:#8A5A00; --warn-soft:#FFEBC4; --info:#231F20; --info-soft:#E7E8E9;
+  --line:#E2E3E4; --line-2:#EFEFF0;
+  --display:"Montserrat",system-ui,sans-serif; --body:"Montserrat",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:16px; --r-sm:12px; --shadow:0 1px 2px rgba(35,31,32,.06),0 6px 18px rgba(35,31,32,.05);
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -427,3 +437,145 @@ tr.grp.k-obra td{background:var(--accent-soft)}tr.grp.k-servico td{background:va
 .balbar b{font-family:var(--display);font-size:22px;color:var(--info)}
 .balbar b.neg{color:var(--neg)}
 .balbar:hover{box-shadow:0 0 0 2px var(--info-soft)}
+
+
+/* ===== Tema Moura Soluções Elétricas: só aparência ===== */
+body{font-size:14.5px}
+h1{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:26px}
+h2{font-weight:800}
+.kpi .v,.strip b,.li .a,.txr .a,.fp-val,.balbar b,.cvp b,.dre .tot,.pcard .nm,.empty b{font-weight:800}
+.bicolor,main::before{background:linear-gradient(90deg,var(--yellow) 0 50%,var(--accent) 50% 100%)}
+main::before{content:"";display:block;height:5px;position:sticky;top:0;z-index:6}
+.cview main::before,.pub main::before{display:block}
+
+/* menu lateral preto */
+.side{background:var(--ink);border-right:0;color:#fff;gap:20px;padding:24px 14px 18px}
+.mbrand{flex-direction:column;align-items:flex-start;gap:10px;padding:0 8px}
+.mbrand .logo{width:178px;height:auto;display:block}
+.mbrand .appname{font-family:var(--display);font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--yellow);color:var(--ink);border-radius:999px;padding:4px 10px}
+.side .nav a,.side .nav button{color:#E7E8E9;font-weight:600;min-height:42px}
+.side .nav a:hover,.side .nav button:hover{background:#34302F;color:#fff}
+.side .nav a.on{background:var(--yellow);color:var(--ink);font-weight:700}
+.side .btn.primary[data-act=new-expense]{background:var(--yellow);border-color:var(--yellow);color:var(--ink)}
+.side .btn.primary[data-act=new-expense]:hover{filter:none;background:#FEC75A;border-color:#FEC75A}
+.side>.btn:not(.primary){background:transparent;border-color:#4A4546;color:#E7E8E9}
+.side>.btn:not(.primary):hover{border-color:#939598;color:#fff}
+.side .foot{color:#B5B6B8}
+.side .foot .btn.ghost{color:var(--yellow)}
+
+/* botões no padrão da marca */
+.btn{border-radius:12px;font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;padding:9px 16px;border-width:1.5px}
+.btn:hover{border-color:#B5B6B8}
+.btn.primary{background:var(--accent-strong);border-color:var(--accent-strong)}
+.btn.primary:hover{filter:none;background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn.primary[data-act=new-expense]{background:var(--yellow);border-color:var(--yellow);color:var(--ink)}
+.btn.primary[data-act=new-expense]:hover{background:#FEC75A;border-color:#FEC75A}
+.btn.dark{background:var(--ink);border-color:var(--ink)}
+.btn.ghost{text-transform:none;letter-spacing:0;font-weight:600;font-size:14px}
+.btn.big{font-size:14px;padding:13px 18px}
+.btn[disabled]{opacity:.45}
+.lnk{color:var(--accent-strong);text-decoration:none;font-weight:700}
+.lnk:hover{color:var(--accent-hover)}
+details.more summary{color:var(--accent-strong)}
+
+/* cards e indicadores */
+.card,.kpi,.strip{border:1px solid var(--line);box-shadow:0 1px 2px rgba(35,31,32,.05)}
+.kpi{position:relative;overflow:hidden;padding-top:19px}
+.kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--tone)}
+.kpi .l{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.kpi .ki{border-radius:10px}
+.kpi.tone-info{--tone:var(--ink);--tone-soft:#E7E8E9}
+.kpi.tone-warn{--tone:#B07A00;--tone-soft:var(--yellow-soft)}
+.kpi.tone-warn .v{color:#8A5A00}
+.kpi.tone-teal{--tone:var(--accent);--tone-soft:var(--accent-soft)}
+.kpi.tone-teal .v{color:var(--accent-strong)}
+.kpi.hl{background:var(--ink);color:#fff;border-color:var(--ink);--tone-soft:#34302F}
+.kpi.hl::before{background:linear-gradient(90deg,var(--yellow) 0 50%,var(--accent) 50% 100%)}
+.kpi.hl .l{color:var(--yellow)} .kpi.hl .h{color:#D1D2D4}
+.kpi.hl .v{color:#7EE2A8}
+.kpi.hl.tone-neg{background:var(--ink);--tone-soft:#34302F}
+.kpi.hl.tone-neg .l{color:var(--yellow)} .kpi.hl.tone-neg .h{color:#D1D2D4}
+.kpi.hl.tone-neg .v{color:#FF9B8F}
+.kpi.hl .ki{background:#34302F;color:var(--yellow)}
+.strip .st-acc b{color:var(--accent-strong)}
+.strip span{font-weight:600}
+.balbar .ki{background:var(--yellow-soft);color:var(--ink)}
+.balbar b{color:var(--ink)}
+.balbar:hover{box-shadow:0 0 0 2px var(--yellow)}
+
+/* etiquetas */
+.pill{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px}
+.pill::before{display:none}
+.pill.s-andamento{background:var(--yellow-2);color:var(--ink)}
+.pill.s-concluida{background:var(--ink);color:#fff}
+.pill.s-aprovada{background:#E7E8E9;color:var(--ink)}
+.pill.s-pausada,.pill.s-aguardando,.pill.warn{background:var(--accent-soft);color:#9A3412}
+.pill.k-obra{background:var(--accent-soft);color:#9A3412}
+.pill.k-servico{background:#E7E8E9;color:var(--ink)}
+.pill.k-venda{background:var(--yellow-2);color:#6B4500}
+tr.grp.k-servico td{background:#EFEFF0}tr.grp.k-venda td{background:var(--yellow-soft)}
+.banner.demo{background:var(--yellow-soft);color:#5C3D00}
+.banner.warn{background:var(--accent-soft);color:#7A2A0E}
+.chip.on{background:var(--ink);border-color:var(--ink)}
+.cav{background:#E7E8E9;color:var(--ink)}
+.cav.pf{background:var(--yellow-2);color:var(--ink)}
+
+/* abas, campos e tabelas */
+.tabs button{font-weight:700}
+.tabs button.on{border-bottom-width:3px;border-color:var(--accent)}
+input[type=text],input[type=search],input[type=date],input[type=email],input[type=password],input[type=tel],input[type=number],select,textarea{border:2px solid #D1D2D4;border-radius:12px}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(241,86,35,.16)}
+label.f{font-weight:700;color:var(--ink)}
+.srch{border:2px solid #D1D2D4;border-radius:12px}
+.dopt{border-radius:12px}
+.dopt.on{background:#FFF6F1}
+th{font-weight:700;letter-spacing:.07em;color:var(--ink-2)}
+.tlist tbody tr:hover td{background:#FAFAFA}
+.tl-name:hover b{color:var(--accent-strong)}
+.sheet{border-radius:20px;border-top:5px solid transparent;background:linear-gradient(#fff,#fff) padding-box,linear-gradient(90deg,var(--yellow) 0 50%,var(--accent) 50% 100%) border-box}
+.sheet header h2{font-size:19px}
+#toast{background:var(--ink);font-weight:600}
+#modal,#light{background:rgba(35,31,32,.45)}
+.seg input:checked+span,.seg2 button.on{font-weight:700}
+.tl .plan i{background:#C9CACC}
+.steps .st::before{border-color:var(--accent)}
+
+/* tela de acesso */
+#auth{background:#fff}
+#auth .pitch{background:var(--ink);position:relative;overflow:hidden}
+#auth .pitch::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;background:linear-gradient(90deg,var(--yellow) 0 50%,var(--accent) 50% 100%)}
+#auth .pitch>*{position:relative}
+#auth .pitch .mbrand .logo{width:230px}
+#auth .pitch h1{font-size:46px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:-.01em}
+#auth .ft span{background:rgba(253,184,19,.14);color:var(--yellow)}
+#auth .ft p,#auth .sync{color:#D1D2D4}
+#auth .box{box-shadow:none;border:0;padding:40px 36px}
+#auth .box h2{font-size:34px;font-weight:900;text-transform:uppercase}
+#auth .box input{border:2px solid #D1D2D4}
+#auth .btn.big{font-size:15px;letter-spacing:.04em;background:var(--accent-strong);border-color:var(--accent-strong)}
+#auth .btn.big:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+@media (max-width:900px){
+  #auth .mhead.hero{background:var(--ink);border-radius:0 0 28px 28px;position:relative;overflow:hidden}
+  #auth .mhead.hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:linear-gradient(90deg,var(--yellow) 0 50%,var(--accent) 50% 100%)}
+  #auth .mhead.hero .mbrand .logo{width:190px}
+  #auth .mhead .mt{font-weight:900;text-transform:uppercase;font-size:25px}
+  #auth .mhead:not(.hero) .mbrand .logo{width:130px}
+  #auth .mhead .mbrand{padding:0}
+  #auth .box{padding:24px}
+}
+
+/* celular */
+.topbar .brand{padding:0}
+.topbar .brand .logo{width:132px;height:auto;display:block}
+@media (max-width:820px){
+  .topbar{border-bottom:0;box-shadow:0 1px 0 var(--line)}
+  main::before{height:4px}
+  .bnav a.on{color:var(--accent-strong)}
+  .bnav .plus{background:var(--yellow);color:var(--ink);box-shadow:0 6px 16px rgba(253,184,19,.45)}
+  h1{font-size:22px}
+  .tabs{background:var(--bg)}
+}
+
+/* visão do cliente */
+.cvh .brand{font-weight:800}
+.cvp b{font-weight:900}

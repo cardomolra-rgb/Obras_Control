@@ -66,7 +66,7 @@ const PCOL=[
 const hashStr=t=>{let h=0;for(const ch of String(t||''))h=(h*31+ch.charCodeAt(0))>>>0;return h};
 const pcol=p=>PCOL.find(c=>c.k===(p&&p.color))||PCOL[hashStr(p&&p.id)%PCOL.length];
 const dot=p=>`<i class="pdot" style="background:${pcol(p).fg}"></i>`;
-const CHART_COLORS=['#F15623','#2F6FDE','#1B9A5E','#D49A1F','#1F8A96','#6B7280','#E8845E','#6A9BEF'];
+const CHART_COLORS=['#F15623','#231F20','#FDB813','#939598','#C44018','#58595B','#FEC75A','#F4804D'];
 const DATA_URL=(()=>{try{const u=new URL(NEON_URL);const l=u.hostname.split('.');return `${u.protocol}//${[l[0],'apirest',...l.slice(1)].join('.')}${u.pathname.replace(/\/+$/,'')}/rest/v1`}catch(e){return ''}})();
 const shareUrl=t=>`${location.origin}/acompanhar/${t}`;
 function newToken(){const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789',b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>a[x%a.length]).join('')}
@@ -282,7 +282,7 @@ function render(){
   AU.hidden=true;AU.dataset.v='';document.body.classList.remove('authp');
   document.body.classList.toggle('ro',!canWrite&&!isDemo());document.body.classList.toggle('cview',r.page==='cliente');
   const on=k=>(r.page===k||(k==='obras'&&r.page==='obra')||(k==='clientes'&&r.page==='clientedet'))?' class="on"':'';
-  $('#side').innerHTML=`<div class="brand"><i></i>OBRA&nbsp;<span>CONTROL</span></div>
+  $('#side').innerHTML=`<div class="brand mbrand"><img class="logo" src="/brand/moura-logo-horizontal-negativa.svg" alt="Moura Soluções Elétricas" width="190" height="59"><span class="appname">Obra Control</span></div>
    <button class="btn primary big" data-act="new-expense" data-w>${ic('plus')} NOVA DESPESA</button>
    <nav class="nav">${NAV.map(([k,l,i])=>k[0]==='@'?`<button data-act="${k.slice(1)}" data-w>${ic(i)}${l}</button>`:`<a href="#${k}"${on(k)}>${ic(i)}${l}</a>`).join('')}</nav>
    ${standalone()?'':`<button class="btn" data-act="install" style="margin:0 6px">${ic('down')} Instalar aplicativo</button>`}<div class="foot">${esc(D.settings.company||'')}${isDemo()?'<br>Modo demonstração':''}${me?`<div class="who">${esc(me.email||'')}</div><button class="btn ghost" style="padding:4px 0;min-height:0" data-act="logout">Sair da conta</button>`:''}</div>`;
@@ -323,9 +323,9 @@ function vAuth(){
    recuperar:{t:'Recuperar senha',s:'Informe o e-mail da sua conta. Enviaremos um link para você criar uma nova senha.',f:[['email','E-mail','email','voce@empresa.com.br','username']],cta:'Enviar link de recuperação',foot:['Lembrou a senha?','Voltar para o login','login']},
    'nova-senha':{t:'Criar nova senha',s:'Escolha a nova senha da sua conta.',f:[['password','Nova senha','password','Mínimo de 8 caracteres','new-password'],['password2','Confirmar nova senha','password','Repita a senha','new-password']],cta:'Salvar nova senha',foot:['','Voltar para o login','login']}
   }[authView];
-  const brand=`<div class="brand"><i></i>OBRA&nbsp;<span>CONTROL</span></div>`;
+  const brand=`<div class="brand mbrand"><img class="logo" src="/brand/moura-logo-horizontal-negativa.svg" alt="Moura Soluções Elétricas" width="190" height="59"><span class="appname">Obra Control</span></div>`,brandCor=`<div class="brand mbrand"><img class="logo" src="/brand/moura-logo-horizontal-cor.svg" alt="Moura Soluções Elétricas" width="150" height="46"></div>`;
   return `<div class="pitch">${brand}<div class="pm"><h1>Cada obra sob controle, do orçamento ao lucro real.</h1><div class="feats">${FEAT.map(([i,t,d])=>`<div class="ft"><span>${ic(i)}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div></div><p class="sync">Computador e celular com a mesma conta e os mesmos dados.</p></div>
-  <div class="panel"><div class="mhead ${authView==='login'?'hero':''}">${authView==='login'?`${brand}<div class="mt">Suas obras na palma da mão.</div><p class="sync">Mesma conta e mesmos dados do computador</p>`:`<button class="icb" data-act="auth-go" data-id="login" aria-label="Voltar">‹</button>${brand}<span style="width:40px"></span>`}</div>
+  <div class="panel"><div class="mhead ${authView==='login'?'hero':''}">${authView==='login'?`${brand}<div class="mt">Suas obras na palma da mão.</div><p class="sync">Mesma conta e mesmos dados do computador</p>`:`<button class="icb" data-act="auth-go" data-id="login" aria-label="Voltar">‹</button>${brandCor}<span style="width:40px"></span>`}</div>
    <form class="box" data-form="auth" novalidate><div><h2>${V.t}</h2><p class="ink2" style="margin-top:6px">${V.s}</p></div>
    ${V.f.map(([n,l,t,ph,ac])=>`<label class="f" for="au-${n}">${l}<input id="au-${n}" name="${n}" type="${t}" placeholder="${ph}" autocomplete="${ac}"></label>`).join('')}
    ${authView==='login'?`<div class="row" style="justify-content:flex-end"><button type="button" class="lnk" data-act="auth-go" data-id="recuperar">Esqueci minha senha</button></div>`:''}
@@ -717,7 +717,7 @@ function drawCharts(){
   const mv=ms.map(m=>sum(D.expenses.filter(e=>!e.deleted&&e.status!=='estornada'&&(e.date||'').startsWith(m)),e=>e.amount));
   mk('#ch-month',{type:'line',data:{labels:ms.map(m=>m.slice(5)+'/'+m.slice(2,4)),datasets:[{data:mv,borderColor:NEG,backgroundColor:'rgba(216,58,58,.10)',fill:true,tension:.3,pointRadius:mv.map((_,i)=>i===11?4:0),pointBackgroundColor:NEG,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:tip},scales:{y:{...ax,beginAtZero:true},x:nog}}});
   const ps=T.ps.filter(x=>x.c.counted||x.c.cost>0),lb=ps.map(x=>x.p.code),ttl={title:i=>ps[i[0].dataIndex].p.name};
-  mk('#ch-cmp',{type:'bar',data:{labels:lb,datasets:[{label:'Contratado',data:ps.map(x=>x.c.contracted),backgroundColor:'#2F6FDE',borderRadius:5},{label:'Custo',data:ps.map(x=>x.c.cost),backgroundColor:NEG,borderRadius:5},{label:'Recebido',data:ps.map(x=>x.c.received),backgroundColor:POS,borderRadius:5}]},options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}},tooltip:{callbacks:{...tip.callbacks,...ttl}}},scales:{y:{...ax,beginAtZero:true},x:nog}}});
+  mk('#ch-cmp',{type:'bar',data:{labels:lb,datasets:[{label:'Contratado',data:ps.map(x=>x.c.contracted),backgroundColor:'#231F20',borderRadius:5},{label:'Custo',data:ps.map(x=>x.c.cost),backgroundColor:NEG,borderRadius:5},{label:'Recebido',data:ps.map(x=>x.c.received),backgroundColor:POS,borderRadius:5}]},options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}},tooltip:{callbacks:{...tip.callbacks,...ttl}}},scales:{y:{...ax,beginAtZero:true},x:nog}}});
   mk('#ch-proj',{type:'bar',data:{labels:lb,datasets:[{data:ps.map(x=>x.c.cost),backgroundColor:ps.map(x=>pcol(x.p).fg),borderColor:ps.map(x=>x.c.overCost?NEG:'transparent'),borderWidth:ps.map(x=>x.c.overCost?2:0),borderRadius:6,barThickness:14}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{...tip.callbacks,...ttl}}},scales:{x:{...ax,beginAtZero:true},y:nog}}});
   const rs=ps.filter(x=>x.c.margin!=null);
   mk('#ch-rent',{type:'bar',data:{labels:rs.map(x=>x.p.code),datasets:[{data:rs.map(x=>+x.c.margin.toFixed(1)),backgroundColor:rs.map(x=>x.c.margin<0?NEG:POS),borderRadius:6}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>rs[i[0].dataIndex].p.name,label:c=>` Margem: ${pct(c.parsed.y)} · Lucro: ${money(rs[c.dataIndex].c.profit)}`}}},scales:{y:{grid:{color:'#F0F1F4'},border:{display:false},ticks:{callback:v=>v+'%'}},x:nog}}});
@@ -931,7 +931,7 @@ function progressChart(v){
   const nar=innerWidth<640,W=nar?400:720,H=nar?290:270,L=nar?36:44,R=nar?10:16,T=22,B=38,iw=W-L-R,ih=H-T-B,fs=nar?12:11;
   const X=d=>L+(dnum(d)-x0)/(x1-x0)*iw, Xn=n=>L+(n-x0)/(x1-x0)*iw, Y=v=>T+ih-(Math.max(0,Math.min(100,v))/100)*ih;
   let g='';
-  for(const v of [0,25,50,75,100])g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ECEEF1"/><text x="${L-8}" y="${Y(v)+4}" text-anchor="end" font-size="${fs}" fill="#8A8F98">${v}%</text>`;
+  for(const v of [0,25,50,75,100])g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ECEEF1"/><text x="${L-8}" y="${Y(v)+4}" text-anchor="end" font-size="${fs}" fill="#6D6E71">${v}%</text>`;
   for(const z of c.pauses){const e=z.end||c.endRef;if(e<s0)continue;const a=Math.max(L,X(z.start)),b=Math.min(W-R,X(e)+iw/(x1-x0));g+=`<rect x="${a}" y="${T}" width="${Math.max(2,b-a)}" height="${ih}" fill="#FBE3E3"><title>Paralisação ${fdate(z.start)}${z.end?' a '+fdate(z.end):' (em aberto)'}: ${esc(z.reason||'')}</title></rect>`}
   // prazo decorrido (linear do início real ao prazo final)
   if(c.start){const xe=X(p.planned_end)+iw/(x1-x0);g+=`<line x1="${X(c.start)}" y1="${Y(0)}" x2="${xe}" y2="${Y(100)}" stroke="#9AA0A9" stroke-width="2" stroke-dasharray="6 5"/>`}
@@ -946,14 +946,14 @@ function progressChart(v){
     let d=`M${X(pts[0][0])},${Y(pts[0][1])}`;for(let i=1;i<pts.length;i++)d+=` L${X(pts[i][0])},${Y(pts[i][1])}`;d+=` L${endX},${Y(last[1])}`;
     g+=`<path d="${d} L${endX},${Y(0)} L${X(pts[0][0])},${Y(0)} Z" fill="rgba(241,86,35,.10)"/><path d="${d}" fill="none" stroke="#F15623" stroke-width="2.5" stroke-linejoin="round"/>`;
     for(const q of pts.slice(1))g+=`<circle cx="${X(q[0])}" cy="${Y(q[1])}" r="3.5" fill="#fff" stroke="#F15623" stroke-width="2"><title>${fdate(q[0])}: ${q[1]}% executado</title></circle>`;
-    g+=`<circle cx="${endX}" cy="${Y(last[1])}" r="5" fill="#F15623"/><text x="${Math.min(endX+8,W-R-34)}" y="${Y(last[1])-10}" font-size="${fs+1}" font-weight="700" fill="#202124">${last[1]}%</text>`;
+    g+=`<circle cx="${endX}" cy="${Y(last[1])}" r="5" fill="#F15623"/><text x="${Math.min(endX+8,W-R-34)}" y="${Y(last[1])-10}" font-size="${fs+1}" font-weight="700" fill="#231F20">${last[1]}%</text>`;
   }
   // marcos
   const xd=Math.min(X(p.planned_end)+iw/(x1-x0),W-R);
-  g+=`<line x1="${xd}" x2="${xd}" y1="${T}" y2="${T+ih}" stroke="#5A5F68" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${xd-5}" y="${T+ih-8}" text-anchor="end" font-size="${fs}" font-weight="600" fill="#5A5F68">Prazo final</text>`;
-  if(!c.done&&dnum(t)>=x0&&dnum(t)<=x1){const xt=X(t)+iw/(x1-x0)/2,anc=xt>W-R-30?'end':xt<L+30?'start':'middle';g+=`<line x1="${xt}" x2="${xt}" y1="${T-6}" y2="${T+ih}" stroke="#202124" stroke-width="1.5"/><text x="${xt}" y="${T-9}" text-anchor="${anc}" font-size="${fs}" font-weight="700" fill="#202124">Hoje</text>`}
-  for(const n of c.notes){if(n.date<s0||dnum(n.date)>x1)continue;g+=`<circle cx="${X(n.date)}" cy="${Y(0)}" r="4" fill="#2F6FDE" stroke="#fff" stroke-width="1.5"><title>${fdate(n.date)}: ${esc(n.text||'')}</title></circle>`}
-  g+=`<text x="${L}" y="${H-12}" font-size="${fs}" fill="#8A8F98">${fdate(s0)}${c.start?' (início real)':''}</text><text x="${W-R}" y="${H-12}" text-anchor="end" font-size="${fs}" fill="#8A8F98">${fdate(isoOf(x1-1))}</text>`;
+  g+=`<line x1="${xd}" x2="${xd}" y1="${T}" y2="${T+ih}" stroke="#58595B" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${xd-5}" y="${T+ih-8}" text-anchor="end" font-size="${fs}" font-weight="600" fill="#58595B">Prazo final</text>`;
+  if(!c.done&&dnum(t)>=x0&&dnum(t)<=x1){const xt=X(t)+iw/(x1-x0)/2,anc=xt>W-R-30?'end':xt<L+30?'start':'middle';g+=`<line x1="${xt}" x2="${xt}" y1="${T-6}" y2="${T+ih}" stroke="#231F20" stroke-width="1.5"/><text x="${xt}" y="${T-9}" text-anchor="${anc}" font-size="${fs}" font-weight="700" fill="#231F20">Hoje</text>`}
+  for(const n of c.notes){if(n.date<s0||dnum(n.date)>x1)continue;g+=`<circle cx="${X(n.date)}" cy="${Y(0)}" r="4" fill="#FDB813" stroke="#231F20" stroke-width="1.5"><title>${fdate(n.date)}: ${esc(n.text||'')}</title></circle>`}
+  g+=`<text x="${L}" y="${H-12}" font-size="${fs}" fill="#6D6E71">${fdate(s0)}${c.start?' (início real)':''}</text><text x="${W-R}" y="${H-12}" text-anchor="end" font-size="${fs}" fill="#6D6E71">${fdate(isoOf(x1-1))}</text>`;
   return `<div class="pchart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico do andamento da obra: prazo decorrido e execução ao longo do tempo">${g}</svg></div>`;
 }
 function clientViewHTML(v,opt={}){
@@ -970,7 +970,7 @@ function clientViewHTML(v,opt={}){
   return `${opt.banner||''}<div class="cv">
    <div class="card cvh" style="border-top:4px solid ${k.fg}"><div class="brand"><i></i>${co.name?esc(co.name):'OBRA&nbsp;<span>CONTROL</span>'}</div>
     <h1>${esc(p.name)}</h1><div class="small ink2">${esc([p.code,[p.city,p.state].filter(Boolean).join(' / ')].filter(Boolean).join(' · '))}</div><div>${statusPill(p)}</div>
-    <div class="gauges"><div><div class="cvp"><b>${tp==null?'—':tp+'%'}</b><span>do prazo decorrido</span></div><div class="bar big"><i style="width:${tpBar}%;background:${tp>100&&!c.done?'var(--neg)':'#5A5F68'}"></i></div><p class="small muted">${c.start?`Do início real em ${fdate(c.start)} até o prazo final em ${fdate(p.planned_end)}${c.totalDays?` (${days(c.totalDays)})`:''}`:'A obra ainda não começou'}${tp>100&&!c.done?`. Prazo final excedido em ${days(c.delay)}.`:''}</p></div>
+    <div class="gauges"><div><div class="cvp"><b>${tp==null?'—':tp+'%'}</b><span>do prazo decorrido</span></div><div class="bar big"><i style="width:${tpBar}%;background:${tp>100&&!c.done?'var(--neg)':'#58595B'}"></i></div><p class="small muted">${c.start?`Do início real em ${fdate(c.start)} até o prazo final em ${fdate(p.planned_end)}${c.totalDays?` (${days(c.totalDays)})`:''}`:'A obra ainda não começou'}${tp>100&&!c.done?`. Prazo final excedido em ${days(c.delay)}.`:''}</p></div>
     <div><div class="cvp"><b>${c.progress}%</b><span>da obra executada</span></div><div class="bar big"><i style="width:${c.progress}%;background:${c.done?'var(--pos)':'var(--accent)'}"></i></div><p class="small muted">${c.done?'Obra concluída':'Percentual informado pela equipe responsável'}</p></div></div></div>
    <div class="grid g2 cvk">${kpi(c.start?'Início da obra':'Início previsto',fdate(c.start||p.planned_start))}${kpi(c.done?'Conclusão':'Prazo final',fdate(c.done?p.real_end:p.planned_end))}${kpi('Situação do prazo',`<span class="${c.late?'neg':c.done?'pos':''}">${prazo[0]}</span>`,prazo[1])}${kpi('Dias de paralisação',days(c.pauseDays),c.pauses.some(z=>!z.end)?'Obra paralisada no momento':'')}</div>
    <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2>Andamento ao longo do tempo</h2>${chartLegend}</div>${progressChart(v)}<p class="small muted" style="margin-top:6px">Linha tracejada: quanto do prazo já passou desde o início real. Linha laranja: execução informada a cada atualização. Pontos azuis: acontecimentos registrados.</p></div>
@@ -1034,13 +1034,13 @@ function finishedModal(pid){
 async function exportTermo(v){
   if(!window.jspdf){toast('O gerador de PDF não carregou. Recarregue a página e tente de novo.');return}
   const c=cvCalc(v),p=c.p,co=v.company||{},cl=v.client||{};
-  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}),A=[241,86,35],INK=[32,33,36],MU=[110,115,124],Wd=210,Lm=20,Rm=190;
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}),A=[241,86,35],INK=[35,31,32],MU=[88,89,91],Wd=210,Lm=20,Rm=190;
   let y=20;
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...INK);doc.text(px(co.name||'Contratada'),Lm,y);
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...MU);
   const cinfo=[co.doc?'CNPJ/CPF: '+co.doc:'',co.address,co.phone].filter(Boolean).join('  ·  ');if(cinfo){y+=5;doc.text(doc.splitTextToSize(px(cinfo),130),Lm,y)}
   doc.text(px('Nº '+(p.code||'')),Rm,20,{align:'right'});
-  y+=7;doc.setDrawColor(...A);doc.setLineWidth(.8);doc.line(Lm,y,Rm,y);
+  y+=7;doc.setLineWidth(1.2);doc.setDrawColor(253,184,19);doc.line(Lm,y,(Lm+Rm)/2,y);doc.setDrawColor(...A);doc.line((Lm+Rm)/2,y,Rm,y);
   y+=12;doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(...INK);doc.text('TERMO DE CONCLUSÃO E ENTREGA DE OBRA',Wd/2,y,{align:'center'});
   y+=8;
   const sec=(title,rows)=>{doc.autoTable({startY:y,head:[[{content:px(title),colSpan:2}]],body:rows.map(r=>r.map(px)),theme:'plain',margin:{left:Lm,right:Wd-Rm},styles:{font:'helvetica',fontSize:9,cellPadding:{top:1.15,bottom:1.15,left:1.5,right:1.5},textColor:INK,lineColor:[232,234,238],lineWidth:{bottom:.2},overflow:'linebreak'},headStyles:{fontStyle:'bold',fontSize:10,textColor:A},columnStyles:{0:{cellWidth:52,textColor:[90,95,104]}}});y=doc.lastAutoTable.finalY+4};
@@ -1389,8 +1389,8 @@ async function exportPdf(pid,pOverride){
   if(!window.jspdf){toast('O gerador de PDF não carregou. Recarregue a página e tente de novo.');return}
   toast('Gerando relatório…');
   const c=calc(p),cl=cli(p.client_id)||{},doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'});
-  const A=[241,86,35],INK=[32,33,36],MU=[138,143,152];
-  doc.setFillColor(...A);doc.rect(0,0,210,24,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text('OBRA CONTROL',14,15);
+  const A=[241,86,35],INK=[35,31,32],MU=[88,89,91];
+  doc.setFillColor(35,31,32);doc.rect(0,0,210,24,'F');doc.setFillColor(253,184,19);doc.rect(0,24,105,2.2,'F');doc.setFillColor(...A);doc.rect(105,24,105,2.2,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text('OBRA CONTROL',14,15);
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(px(c.done?'Relatório final da obra':'Relatório parcial da obra'),196,15,{align:'right'});
   doc.setTextColor(...INK);doc.setFont('helvetica','bold');doc.setFontSize(14);doc.text(doc.splitTextToSize(px(p.name),182),14,36);
   doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(...MU);doc.text(px(`${p.code} · ${STATUS[p.status]}${D.settings.company?' · '+D.settings.company:''}${isDemo()?' · DADOS DE DEMONSTRAÇÃO':''}`),14,48);
