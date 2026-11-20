@@ -1,4 +1,5 @@
 import { createClient } from '@neon/neon-js';
+import './libs.js';
 // Endereço público do banco no Neon (sem credenciais). O acesso aos dados é liberado
 // só depois do login e limitado por usuário pelas políticas RLS (ver sql/schema.sql).
 const NEON_URL = import.meta.env.VITE_NEON_DATABASE_URL || 'https://ep-curly-silence-b6whyv3k.c-2.sa-east-1.aws.neon.tech/neondb';
@@ -12,7 +13,7 @@ const pad=n=>String(n).padStart(2,'0');
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const money=v=>BRL.format(Number(v)||0).replace(/[  ]/g,' ');
 const pct=v=>v==null||!isFinite(v)?'—':v.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
-const fdate=iso=>iso?iso.split('-').reverse().join('/'):'—';
+const fdate=iso=>iso?esc(String(iso).split('-').reverse().join('/')):'—';
 const isoOf=n=>new Date(n*864e5).toISOString().slice(0,10);
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
 const dnum=iso=>Date.UTC(+iso.slice(0,4),+iso.slice(5,7)-1,+iso.slice(8,10))/864e5;
@@ -132,8 +133,12 @@ async function loadAll(){
   LIVE.settings={company:'',categories:[],...(st?st.data:{})};
   lastLoad=Date.now();
 }
-function log(entity,action,pid,text,eid){
-  return put('audit',{id:uid('a'),ts:Date.now(),by:myId||null,entity,action,project_id:pid||null,entity_id:eid||null,text});
+async function log(entity,action,pid,text,eid){
+  const o={id:uid('a'),ts:Date.now(),by:myId||null,entity,action,project_id:pid||null,entity_id:eid||null,text};
+  if(memory()){localPut('audit',o);return}
+  const {error}=await neon.from('audit_log').insert({id:o.id,data:o,project_id:o.project_id});
+  if(error)throw error;
+  localPut('audit',o);
 }
 function errText(e){
   const m=String((e&&e.message)||'');
@@ -309,9 +314,11 @@ function emptyStart(){
 
 /* --- acesso --- */
 const FEAT=[['doc','Controle de tarefas e atividades','Saiba o que cada equipe precisa fazer e o que já foi entregue.'],['build','Gestão de obras e despesas','Custos, recebimentos e lucro real de cada obra, separados.'],['coin','Relatórios inteligentes','Resultado financeiro e prazos em PDF e Excel, em poucos cliques.'],['cal','Notificações e lembretes','Avisos de prazo, custo acima do previsto e pendências.']];
+const SIGNUP_OPEN=false; // novos cadastros bloqueados no Neon Auth; contas novas só pelo administrador
 function vAuth(){
+  if(!SIGNUP_OPEN&&authView==='cadastro')authView='login';
   const V={
-   login:{t:'Entrar na plataforma',s:'Use o mesmo e-mail e senha no computador e no aplicativo.',f:[['email','E-mail','email','voce@empresa.com.br','username'],['password','Senha','password','Sua senha','current-password']],cta:'Entrar',foot:['Ainda não tem conta?','Criar conta','cadastro']},
+   login:{t:'Entrar na plataforma',s:'Use o mesmo e-mail e senha no computador e no aplicativo.',f:[['email','E-mail','email','voce@empresa.com.br','username'],['password','Senha','password','Sua senha','current-password']],cta:'Entrar',foot:SIGNUP_OPEN?['Ainda não tem conta?','Criar conta','cadastro']:['Acesso restrito a usuários autorizados.','','']},
    cadastro:{t:'Criar conta',s:'Cadastre seu usuário e senha para começar a controlar suas obras.',f:[['name','Nome completo','text','Seu nome','name'],['company','Empresa','text','Nome da empresa','organization'],['email','E-mail','email','voce@empresa.com.br','username'],['password','Senha','password','Mínimo de 8 caracteres','new-password'],['password2','Confirmar senha','password','Repita a senha','new-password']],cta:'Criar conta',foot:['Já tem conta?','Entrar','login']},
    recuperar:{t:'Recuperar senha',s:'Informe o e-mail da sua conta. Enviaremos um link para você criar uma nova senha.',f:[['email','E-mail','email','voce@empresa.com.br','username']],cta:'Enviar link de recuperação',foot:['Lembrou a senha?','Voltar para o login','login']},
    'nova-senha':{t:'Criar nova senha',s:'Escolha a nova senha da sua conta.',f:[['password','Nova senha','password','Mínimo de 8 caracteres','new-password'],['password2','Confirmar nova senha','password','Repita a senha','new-password']],cta:'Salvar nova senha',foot:['','Voltar para o login','login']}
@@ -323,7 +330,7 @@ function vAuth(){
    ${V.f.map(([n,l,t,ph,ac])=>`<label class="f" for="au-${n}">${l}<input id="au-${n}" name="${n}" type="${t}" placeholder="${ph}" autocomplete="${ac}"></label>`).join('')}
    ${authView==='login'?`<div class="row" style="justify-content:flex-end"><button type="button" class="lnk" data-act="auth-go" data-id="recuperar">Esqueci minha senha</button></div>`:''}
    <p class="msg" role="alert"></p><button class="btn primary big">${V.cta}</button>
-   <p class="ink2 small" style="text-align:center">${V.foot[0]} <button type="button" class="lnk" data-act="auth-go" data-id="${V.foot[2]}">${V.foot[1]}</button></p></form></div>`;
+   <p class="ink2 small" style="text-align:center">${V.foot[0]} ${V.foot[1]?`<button type="button" class="lnk" data-act="auth-go" data-id="${V.foot[2]}">${V.foot[1]}</button>`:''}</p></form></div>`;
 }
 async function authSubmit(f){
   const v=vals(f),msg=t=>{$('.msg',f).textContent=t||'';$('.msg',f).style.color=''},b=$('.btn.primary',f);

@@ -8,6 +8,14 @@ const JWKS = createRemoteJWKSet(new URL(AUTH + '/.well-known/jwks.json'));
 const DABRA = (process.env.DABRA_BASE_URL || 'https://app.dabradata.com/api/v1').replace(/\/+$/, '');
 
 const only = (s) => String(s || '').replace(/\D/g, '');
+// Limite de consultas por usuário (proteção contra abuso e gasto de créditos).
+// Fica na memória de cada instância da função: é uma barreira de melhor esforço.
+const RL = new Map(); const RL_MAX = 20, RL_WIN = 60_000;
+function limited(key) {
+  const now = Date.now(); const a = (RL.get(key) || []).filter((t) => now - t < RL_WIN);
+  if (a.length >= RL_MAX) { RL.set(key, a); return true; }
+  a.push(now); RL.set(key, a); if (RL.size > 5000) RL.clear(); return false;
+}
 function validCPF(c) {
   if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
   const dv = (n) => { let s = 0; for (let i = 0; i < n; i++) s += +c[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
@@ -107,17 +115,23 @@ async function getJSON(url, headers = {}) {
   return { ok: r.ok, status: r.status, json: j };
 }
 
+export { limited, validCPF, validCNPJ };
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
   const tok = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!tok || tok.length > 4096) return res.status(401).json({ error: 'Entre na sua conta para consultar.' });
+  let sub = '';
   try {
-    const { payload } = await jwtVerify(tok, JWKS);
-    if (payload.role !== 'authenticated' || !String(payload.iss || '').startsWith('https://ep-curly-silence-b6whyv3k.neonauth.')) throw new Error('role');
+    const { payload } = await jwtVerify(tok, JWKS, { algorithms: ['EdDSA', 'ES256', 'RS256'] });
+    if (payload.role !== 'authenticated' || !payload.sub || !String(payload.iss || '').startsWith(new URL(AUTH).origin)) throw new Error('role');
+    sub = String(payload.sub);
   } catch (e) {
     return res.status(401).json({ error: 'Entre na sua conta para consultar.' });
   }
-  let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  if (limited(sub)) { res.setHeader('Retry-After', '60'); return res.status(429).json({ error: 'Muitas consultas seguidas. Aguarde um minuto.' }); }
+  let body = req.body; if (typeof body === 'string') { if (body.length > 2048) body = '{}'; try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  if (!body || typeof body !== 'object') body = {};
   const tipo = String((body && body.tipo) || ''); const d = only(body && body.doc);
   const key = process.env.DABRA_API_KEY || '';
   try {

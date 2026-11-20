@@ -1,6 +1,6 @@
 // OBRA CONTROL: guarda a "casca" do aplicativo para abrir rápido e funcionar como app instalado.
 // Os dados (Neon) nunca são guardados aqui: sempre vêm do servidor.
-const CACHE = 'obra-control-v1';
+const CACHE = 'obra-control-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -18,7 +18,7 @@ self.addEventListener('fetch', e => {
     return;
   }
   const isStatic = url.origin === location.origin && (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/'));
-  const isLib = /cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.(googleapis|gstatic)\.com/.test(url.hostname);
+  const isLib = /fonts\.(googleapis|gstatic)\.com/.test(url.hostname);
   if (isStatic || isLib) {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(r => { if (r.ok || r.type === 'opaque') { const c = r.clone(); caches.open(CACHE).then(k => k.put(req, c)); } return r; })));
   }
