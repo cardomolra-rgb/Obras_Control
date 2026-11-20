@@ -18,7 +18,7 @@
     "xlsx": "0.18.5"
   },
   "devDependencies": {
-    "vite": "^6.4.6"
+    "vite": "^8.3.8"
   },
   "overrides": {
     "dompurify": "^3.4.18"
