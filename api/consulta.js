@@ -53,6 +53,7 @@ function firstOf(obj, listRe, fieldRe) {
 const fmtPhone = (s) => { const d = only(s); if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`; if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return s || ''; };
 const fmtCep = (s) => { const d = only(s); return d.length === 8 ? `${d.slice(0,5)}-${d.slice(5)}` : s || ''; };
 
+export { fromCnpjWs };
 export function normalize(raw, tipo) {
   const out = {
     name: pick(raw, [/^razao_?social$/i, /^nome_?empresarial$/i, /^nome$/i, /^nome_?completo$/i, /name/i]),
@@ -73,6 +74,31 @@ export function normalize(raw, tipo) {
   };
   if (out.opened_at && /^\d{4}-\d{2}-\d{2}/.test(out.opened_at)) out.opened_at = out.opened_at.slice(0, 10);
   return out;
+}
+
+// CNPJ.ws (https://www.cnpj.ws): API pública (3 consultas por minuto) ou comercial com token.
+function fromCnpjWs(j) {
+  const e = j.estabelecimento || {};
+  const ie = (e.inscricoes_estaduais || []).find((x) => x && x.ativo !== false) || (e.inscricoes_estaduais || [])[0];
+  const simples = j.simples || {};
+  return {
+    name: j.razao_social || '',
+    trade_name: e.nome_fantasia || '',
+    status_rf: e.situacao_cadastral || '',
+    opened_at: (e.data_inicio_atividade || '').slice(0, 10),
+    activity: (e.atividade_principal && e.atividade_principal.descricao) || '',
+    cep: fmtCep(e.cep),
+    street: [e.tipo_logradouro, e.logradouro].filter(Boolean).join(' '),
+    number: e.numero || '',
+    complement: e.complemento || '',
+    district: e.bairro || '',
+    city: (e.cidade && e.cidade.nome) || '',
+    state: ((e.estado && e.estado.sigla) || '').toUpperCase(),
+    phone: e.telefone1 ? fmtPhone(`${e.ddd1 || ''}${e.telefone1}`) : '',
+    email: (e.email || '').toLowerCase(),
+    ie: ie && ie.inscricao_estadual ? String(ie.inscricao_estadual) : '',
+    regime: simples.mei === 'Sim' ? 'MEI' : simples.simples === 'Sim' ? 'Simples Nacional' : '',
+  };
 }
 
 async function getJSON(url, headers = {}) {
@@ -109,9 +135,14 @@ export default async function handler(req, res) {
         if (r.status === 401 || r.status === 403) return res.status(502).json({ error: 'A chave da Dabra foi recusada. Confira DABRA_API_KEY na Vercel.' });
         if (r.status === 402) return res.status(502).json({ error: 'Saldo insuficiente na Dabra.' });
       }
+      const wsTok = process.env.CNPJWS_TOKEN || '';
+      const w = await getJSON(wsTok ? `https://comercial.cnpj.ws/cnpj/${d}` : `https://publica.cnpj.ws/cnpj/${d}`, wsTok ? { x_api_token: wsTok } : {});
+      if (w.ok && w.json && w.json.razao_social) return res.json({ source: 'CNPJ.ws', data: fromCnpjWs(w.json) });
+      if (w.status === 404) return res.status(404).json({ error: 'CNPJ não encontrado na Receita Federal.' });
+      // CNPJ.ws fora do ar ou no limite de consultas: tenta a BrasilAPI
       const r = await getJSON(`https://brasilapi.com.br/api/cnpj/v1/${d}`);
-      if (!r.ok || !r.json) return res.status(404).json({ error: 'CNPJ não encontrado na Receita Federal.' });
-      return res.json({ source: 'Receita Federal (BrasilAPI)', data: normalize(r.json, 'cnpj') });
+      if (!r.ok || !r.json) return res.status(r.status === 404 ? 404 : 502).json({ error: r.status === 404 ? 'CNPJ não encontrado na Receita Federal.' : 'Muitas consultas seguidas. Aguarde um minuto e tente de novo.' });
+      return res.json({ source: 'Receita Federal (BrasilAPI)', data: { ...normalize(r.json, 'cnpj'), regime: r.json.opcao_pelo_mei ? 'MEI' : r.json.opcao_pelo_simples ? 'Simples Nacional' : '' } });
     }
     if (tipo === 'cpf') {
       if (!validCPF(d)) return res.status(400).json({ error: 'CPF inválido. Confira os números.' });
