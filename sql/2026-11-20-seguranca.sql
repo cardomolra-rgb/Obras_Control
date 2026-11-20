@@ -65,4 +65,4 @@ alter table public.audit_log drop constraint if exists data_is_object;
 alter table public.audit_log add constraint data_is_object check (jsonb_typeof(data) = 'object' and pg_column_size(data) < 262144);
 
 -- 5) Aplicado DEPOIS da publicação da versão que grava o histórico só por inserção:
--- revoke update, delete on public.audit_log from authenticated;
+revoke update, delete on public.audit_log from authenticated;  -- aplicado em 20/11/2026 após o deploy
