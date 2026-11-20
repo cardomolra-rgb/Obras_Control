@@ -370,7 +370,8 @@ function accBal(a){
   if(!a)return null;
   const ts=D.transactions.filter(t=>t.account_id===a.id),last=ts.map(t=>t.date||'').sort().pop()||'';
   if(a.balance==null||!a.balance_date)return {value:null,asOf:last,last};
-  const after=ts.filter(t=>t.date>a.balance_date);
+  const bset=a.balance_set_at||0;
+  const after=ts.filter(t=>t.date>a.balance_date||(t.date===a.balance_date&&bset&&t.file!==a.balance_file&&(t.imported_at||0)>bset));
   return {value:Math.round((+a.balance+sum(after,t=>t.amount))*100)/100,asOf:last>a.balance_date?last:a.balance_date,base:+a.balance,baseDate:a.balance_date,source:a.balance_source||'banco',after:after.length,last};
 }
 function balTotal(list){const bs=list.map(accBal);const known=bs.filter(b=>b&&b.value!=null);return {value:sum(known,b=>b.value),missing:bs.length-known.length,asOf:known.map(b=>b.asOf).sort().pop()||''}}
@@ -380,7 +381,7 @@ function finAccBal(id){
   modal({title:'Ajustar saldo',submit:'Salvar saldo',body:`<p class="ink2">${esc(a.name)}</p><p class="small muted">Use quando o arquivo do banco não traz o saldo ou para corrigir uma diferença. Os lançamentos importados com data posterior são somados automaticamente.</p><div class="form">${fld('Saldo','bal',b&&b.value!=null?b.value:'',{type:'text',ph:'Ex.: 12.345,67 ou -500,00'})}${fld('Saldo no fim do dia','date',(b&&b.asOf)||today(),{type:'date'})}</div>`,
    onSubmit:async(f,msg)=>{const v=vals(f),raw=String(v.bal||'').trim();if(!raw||!v.date){msg('Informe o saldo e a data.');return false}
      const neg=/^-|-$|\(.*\)/.test(raw),num=Number(raw.replace(/[^\d,.]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'));if(!isFinite(num)){msg('Saldo inválido.');return false}
-     await put('accounts',{...a,balance:neg?-num:num,balance_date:v.date,balance_source:'manual'});toast('Saldo atualizado.')}});
+     await put('accounts',{...a,balance:neg?-num:num,balance_date:v.date,balance_source:'manual',balance_file:'',balance_set_at:Date.now()});toast('Saldo atualizado.')}});
 }
 function decodeOFX(buf){
   const head=new TextDecoder('latin1').decode(buf.slice(0,600));
@@ -414,7 +415,9 @@ async function finImport(files){
       let a=D.accounts.find(x=>x.key===key);
       if(!a){const fin=String(o.acctid||'').replace(/\D/g,'').slice(-4);a={id:'acc_'+h32(key,7)+h32(key,11),key,bank:o.bank||'',acctid:o.acctid||'',name:`Conta ${fin?'final '+fin:(D.accounts.length+1)}`,created_at:Date.now()}}
       const ds=o.txs.map(t=>t.date).sort();
-      if(o.bal!=null&&(!a.balance_date||(o.balDate||ds[ds.length-1])>=a.balance_date)){a={...a,balance:o.bal,balance_date:o.balDate||ds[ds.length-1],balance_source:'banco'}}
+      // alguns bancos (ex.: Sicredi) informam a data do saldo no fim do mês; vale no máximo o dia da importação
+      const bd=[o.balDate||ds[ds.length-1],today()].sort()[0],cur=a.balance_date?[a.balance_date,today()].sort()[0]:'';
+      if(o.bal!=null&&(!cur||bd>=cur)){a={...a,balance:o.bal,balance_date:bd,balance_source:'banco',balance_file:f.name,balance_set_at:Date.now()}}
       a={...a,last_import:Date.now(),last_file:f.name};
       await put('accounts',a);
       // Considera só o que é novo: 1) mesmo código do banco (FITID) = já importado;
