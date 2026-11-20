@@ -378,10 +378,12 @@ function parseOFX(text){
   const acctid=tag(text,'ACCTID'),bank=tag(text,'BANKID')||tag(text,'ORG');
   const lb=/<LEDGERBAL>([\s\S]*?)(<\/LEDGERBAL>|<AVAILBAL>|<\/STMTRS>)/i.exec(text);
   const bal=lb?num(tag(lb[1],'BALAMT')):null,balDate=lb?dt(tag(lb[1],'DTASOF')):'';
+  const occ={};
   const txs=text.split(/<STMTTRN>/i).slice(1).map(b=>b.split(/<\/STMTTRN>/i)[0]).map(b=>{
     const name=tag(b,'NAME'),memo=tag(b,'MEMO'),amount=num(tag(b,'TRNAMT')),date=dt(tag(b,'DTPOSTED'));
     const desc=[name,memo].filter((x,i,a)=>x&&a.indexOf(x)===i).join(' · ')||tag(b,'TRNTYPE');
-    return {fitid:tag(b,'FITID')||('h'+h32(date+amount+desc,99)),date,amount,desc,type:tag(b,'TRNTYPE')};
+    let fit=tag(b,'FITID');if(!fit){const k=date+'|'+amount+'|'+desc;occ[k]=(occ[k]||0)+1;fit='h'+h32(k,99)+'_'+occ[k]}
+    return {fitid:fit,date,amount,desc,type:tag(b,'TRNTYPE')};
   }).filter(t=>t.date&&isFinite(t.amount)&&t.amount!==0);
   return {acctid,bank,bal,balDate,txs};
 }
@@ -399,9 +401,21 @@ async function finImport(files){
       if(o.bal!=null&&(!a.balance_date||(o.balDate||ds[ds.length-1])>=a.balance_date)){a={...a,balance:o.bal,balance_date:o.balDate||ds[ds.length-1]}}
       a={...a,last_import:Date.now(),last_file:f.name};
       await put('accounts',a);
-      const have=new Set(D.transactions.map(t=>t.id)),sig=new Set(D.transactions.filter(t=>t.account_id===a.id).map(t=>t.date+'|'+t.amount+'|'+t.desc));
+      // Considera só o que é novo: 1) mesmo código do banco (FITID) = já importado;
+      // 2) se o banco mudou o código, compara data+valor+descrição contando quantas vezes já existe
+      //    (assim duas compras iguais no mesmo dia continuam sendo duas).
+      const have=new Set(D.transactions.map(t=>t.id)),sigOf=t=>t.date+'|'+Number(t.amount).toFixed(2)+'|'+deacc(t.desc).replace(/\s+/g,' ').trim();
+      const left={};for(const t of D.transactions)if(t.account_id===a.id){const k=sigOf(t);left[k]=(left[k]||0)+1}
+      const rows=o.txs.map(t=>({t,id:txId(a.id,t.fitid),sg:sigOf(t)}));
+      for(const r of rows)if(have.has(r.id)){r.dup=true;if(left[r.sg]>0)left[r.sg]--}
       const add=[];
-      for(const t of o.txs){const id=txId(a.id,t.fitid),sg=t.date+'|'+t.amount+'|'+t.desc;if(have.has(id)||sig.has(sg)){rep++;continue}have.add(id);sig.add(sg);add.push({id,account_id:a.id,fitid:t.fitid,date:t.date,amount:t.amount,desc:t.desc,type:t.type,status:'pendente',imported_at:Date.now(),file:f.name})}
+      for(const r of rows){
+        if(r.dup){rep++;continue}
+        if(left[r.sg]>0){left[r.sg]--;rep++;continue}
+        if(have.has(r.id)){rep++;continue}
+        have.add(r.id);const t=r.t;
+        add.push({id:r.id,account_id:a.id,fitid:t.fitid,date:t.date,amount:t.amount,desc:t.desc,type:t.type,status:'pendente',imported_at:Date.now(),file:f.name});
+      }
       await putMany('transactions',add);novos+=add.length;per.push([ds[0],ds[ds.length-1]]);
     }catch(e){console.error(e);erro++}
   }
