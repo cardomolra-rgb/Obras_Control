@@ -268,6 +268,7 @@ let raf=0;
 function schedule(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;render()})}
 function route(){const h=(location.hash||'').slice(1)||'dashboard';return h.startsWith('obra-')?{page:'obra',id:h.slice(5)}:h.startsWith('clientes-')?{page:'clientedet',id:h.slice(9)}:h.startsWith('cliente-')?{page:'cliente',id:h.slice(8)}:{page:h}}
 const NAV=[['dashboard','Dashboard','home'],['obras','Minhas Obras','build'],['clientes','Clientes','user'],['@new-project','Nova Obra','plus'],['despesas','Lançar Despesa','coin'],['financeiro','Financeiro','bank'],['cronograma','Cronograma','cal'],['relatorios','Relatórios','doc'],['configuracoes','Configurações','gear']];
+function stackLabels(root){root.querySelectorAll('table.stack').forEach(t=>{const hs=[...t.querySelectorAll('thead th')].map(x=>x.textContent);t.querySelectorAll('tbody tr').forEach(r=>{let i=0;[...r.cells].forEach(c=>{c.dataset.l=c.colSpan>1?'':hs[i]||'';i+=c.colSpan})})});}
 function render(){
   if(phase==='public'){document.body.classList.add('cview','pub');document.body.classList.remove('authp');$('#auth').hidden=true;$('#view').innerHTML=vPublic();return}
   const r=route();
@@ -294,7 +295,7 @@ function render(){
   }
   $('#view').innerHTML=h;
   if(r.page==='dashboard'||!['obras','clientes','clientedet','despesas','financeiro','cronograma','relatorios','configuracoes','obra','cliente'].includes(r.page))drawCharts();
-  document.querySelectorAll('table.stack').forEach(t=>{const hs=[...t.querySelectorAll('thead th')].map(x=>x.textContent);t.querySelectorAll('tbody tr').forEach(r=>{let i=0;[...r.cells].forEach(c=>{c.dataset.l=c.colSpan>1?'':hs[i]||'';i+=c.colSpan})})});
+  stackLabels(document);
   fillNames();
 }
 const statusPill=p=>`<span class="pill s-${p.status}">${STATUS[p.status]||p.status}</span>`;
@@ -689,19 +690,21 @@ function vObras(){
   <div class="chips kfilter">${[['','Todos'],['obra','Obras'],['servico','Serviços'],['venda','Vendas']].map(([k,l])=>`<button type="button" class="chip${PF.kind===k?' on':''}" data-act="pf-kind" data-id="${k}">${l}</button>`).join('')}</div>`;
   if(!D.projects.length)return h+emptyStart();
   h+=`<div class="row"><input type="search" id="pf-q" placeholder="Buscar por nome, código, cliente ou cidade" value="${esc(PF.q)}" style="flex:1;min-width:200px" data-pf="q"><select id="pf-status" data-pf="status" style="width:auto"><option value="">Todos os status</option>${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${PF.status===k?' selected':''}>${v}</option>`).join('')}</select></div>`;
-  return h+`<div class="grid g3" id="plist">${projCards()}</div>`;
+  return h+`<div class="card tcard"><div class="scroll" id="plist">${projCards()}</div></div>`;
 }
 function projCards(){
   const q=PF.q.toLowerCase();
   const l=D.projects.filter(p=>(!PF.kind||kindOf(p)===PF.kind)&&(!PF.status||p.status===PF.status)&&(!q||[p.name,p.code,p.city,(cli(p.client_id)||{}).name].join(' ').toLowerCase().includes(q))).sort((a,b)=>(b.created_at||0)-(a.created_at||0));
-  if(!l.length)return `<p class="muted">Nenhuma obra encontrada com esse filtro.</p>`;
-  return l.map(p=>{const c=calc(p),u=c.planned>0?Math.min(100,c.cost/c.planned*100):0,k=pcol(p);return `<a class="card pcard" href="#obra-${p.id}" style="background:${k.bg};border:1px solid ${k.bd}">
-   <div class="top"><div><div class="small muted">${dot(p)}${esc(p.code)}</div><div class="nm">${esc(p.name)}</div><div class="small ink2">${esc((cli(p.client_id)||{}).name||'Sem cliente')}</div></div></div>
-   <div class="row">${kindOf(p)!=='obra'?`<span class="pill k-${kindOf(p)}">${KIND[kindOf(p)].n}</span>`:''}${statusPill(p)}${flags(c)}</div>
-   <div class="figs"><div class="fig"><span>Contratado</span><b>${money(c.contracted).replace(" ","&nbsp;")}</b></div><div class="fig"><span>Custo</span><b>${money(c.cost).replace(" ","&nbsp;")}</b></div><div class="fig"><span>Lucro</span><b class="${sgn(c.profit)}">${money(c.profit).replace(" ","&nbsp;")}</b></div></div>
-   <div><div class="bar${c.overCost?' over':''}" style="background:rgba(255,255,255,.7)"><i style="width:${u}%;${c.overCost?'':'background:'+k.fg}"></i></div><div class="small muted" style="margin-top:5px">${c.planned>0?pct(c.cost/c.planned*100)+' do custo previsto':'Sem custo previsto'} · ${p.planned_end?'prazo '+fdate(p.planned_end):'sem prazo'}</div></div></a>`}).join('');
+  if(!l.length)return `<p class="muted" style="padding:12px 0">Nenhum cadastro encontrado com esse filtro.</p>`;
+  return `<table class="stack tlist"><thead><tr><th>Cadastro</th><th>Situação</th><th class="r">Contratado</th><th class="r">Custo</th><th class="r">Lucro</th><th>Prazo</th><th class="r">Ações</th></tr></thead><tbody>${l.map(p=>{const c=calc(p),u=c.planned>0?Math.min(100,c.cost/c.planned*100):0,k=pcol(p),cl=cli(p.client_id);
+    return `<tr><td class="tl-main"><a href="#obra-${p.id}" class="tl-name">${dot(p)}<span><small>${esc(p.code)}${cl?' · '+esc(cl.name):''}</small><b>${esc(p.name)}</b></span></a></td>
+    <td><div class="chips">${kindOf(p)!=='obra'?`<span class="pill k-${kindOf(p)}">${KIND[kindOf(p)].n}</span>`:''}${statusPill(p)}${c.late?`<span class="pill bad">${days(c.delay)} de atraso</span>`:''}${c.overCost?'<span class="pill bad">Acima do custo</span>':''}</div></td>
+    <td class="r">${money(c.contracted)}</td>
+    <td class="r"><div class="cell"><div>${money(c.cost)}</div>${c.planned>0?`<div class="bar mini${c.overCost?' over':''}"><i style="width:${u}%;${c.overCost?'':'background:'+k.fg}"></i></div>`:''}</div></td>
+    <td class="r"><div class="cell"><b class="${sgn(c.profit)}">${money(c.profit)}</b>${c.margin!=null?`<div class="small muted">${pct(c.margin)}</div>`:''}</div></td>
+    <td class="tw">${c.done?`Concluída ${fdate(p.real_end)}`:p.planned_end?fdate(p.planned_end):'<span class="muted">Sem prazo</span>'}</td>
+    <td class="r tl-act" data-w><button type="button" class="icb" data-act="edit-project" data-id="${p.id}" aria-label="Editar ${esc(p.name)}" title="Editar">${ic('edit')}</button><button type="button" class="icb danger" data-act="del-project" data-id="${p.id}" aria-label="Excluir ${esc(p.name)}" title="Excluir">${ic('trash')}</button></td></tr>`}).join('')}</tbody></table>`;
 }
-
 /* --- despesas (lançamentos) --- */
 function expRows(list,showProj){
   if(!list.length)return `<p class="muted small" style="padding:8px 0">Nenhuma despesa encontrada.</p>`;
@@ -805,7 +808,7 @@ function vObra(id){
   const TABS=[['resumo','Resumo'],['despesas','Despesas'],['recebimentos','Recebimentos'],['cronograma','Cronograma'],['relatorios','Relatórios'],['historico','Histórico']];
   let h=`<div class="head"><div><a href="#obras" class="small muted">‹ Minhas Obras</a><h1>${esc(p.name)}</h1><div class="row" style="margin-top:8px"><span class="small muted">${dot(p)}${esc(p.code)}</span>${statusPill(p)}${flags(c)}</div></div>
    <div class="row">${c.done?`<button class="btn" data-act="reopen" data-id="${p.id}" data-w>Reabrir obra</button>`:`<select id="st-sel" data-status="${p.id}" style="width:auto" aria-label="Status da obra" data-w>${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${p.status===k?' selected':''}>${v}</option>`).join('')}</select>`}
-   <button class="btn" data-act="share" data-id="${p.id}">${p.share_token?'Link do cliente':'Enviar ao cliente'}</button><a class="btn ghost" href="#cliente-${p.id}">Prévia</a><button class="btn" data-act="edit-project" data-id="${p.id}" data-w>${ic('edit')} Editar</button><button class="btn primary" data-act="new-expense" data-id="${p.id}" data-w>${ic('plus')} NOVA DESPESA</button>${c.open?`<button class="btn dark" data-act="finalize" data-id="${p.id}" data-w>FINALIZAR OBRA</button>`:''}</div></div>
+   <button class="btn" data-act="share" data-id="${p.id}">${p.share_token?'Link do cliente':'Enviar ao cliente'}</button><a class="btn ghost" href="#cliente-${p.id}">Prévia</a><button class="btn ghost danger" data-act="del-project" data-id="${p.id}" data-w aria-label="Excluir" title="Excluir">${ic('trash')}</button><button class="btn" data-act="edit-project" data-id="${p.id}" data-w>${ic('edit')} Editar</button><button class="btn primary" data-act="new-expense" data-id="${p.id}" data-w>${ic('plus')} NOVA DESPESA</button>${c.open?`<button class="btn dark" data-act="finalize" data-id="${p.id}" data-w>FINALIZAR OBRA</button>`:''}</div></div>
    <div class="tabs" role="tablist">${TABS.map(([k,l])=>`<button role="tab" aria-selected="${tab===k}" class="${tab===k?'on':''}" data-act="tab" data-id="${k}">${l}</button>`).join('')}</div>`;
   if(tab==='resumo'){
     h+=`<div class="grid g4">${kpi('Valor contratado',money(c.contracted),c.canceled?'Cancelada: vale o que foi recebido':'')}${kpi('Custo acumulado',money(c.cost),c.planned?`Previsto ${money(c.planned)}`:'Sem custo previsto')}${kpi('Lucro atual',`<span class="${c.profit<0?'neg':''}">${money(c.profit)}</span>`,'Margem '+pct(c.margin),'hl')}${kpi('Prazo',p.planned_end?fdate(p.planned_end):'—',c.done?`Concluída em ${fdate(p.real_end)}`:c.late?`<span class="neg">${days(c.delay)} de atraso</span>`:c.remaining!=null?`Restam ${days(c.remaining)}`:'')}</div>
@@ -1128,16 +1131,20 @@ function clientStats(id){const ps=D.projects.filter(p=>p.client_id===id),cs=ps.m
 function clientRows(){
   const q=deacc(CF.q),qd=onlyD(CF.q);
   const l=D.clients.filter(c=>(!CF.kind||(c.kind||(onlyD(c.doc).length===11?'pf':'pj'))===CF.kind)&&(!q||deacc([c.name,c.trade_name,c.city,c.email,c.contact].join(' ')).includes(q)||(qd.length>=3&&onlyD(c.doc+' '+c.phone+' '+c.whatsapp).includes(qd)))).sort((a,b)=>(a.name||'').localeCompare(b.name||'','pt-BR'));
-  if(!l.length)return `<p class="muted small" style="padding:10px 0">${D.clients.length?'Nenhum cliente encontrado com essa busca.':'Nenhum cliente cadastrado ainda.'}</p>`;
-  return l.map(c=>{const st=clientStats(c.id),k=c.kind||(onlyD(c.doc).length===11?'pf':'pj'),bad=c.status_rf&&!/ATIVA/i.test(c.status_rf)&&k==='pj';
-    return `<a class="li clr" href="#clientes-${c.id}"><span class="cav ${k}">${esc((c.trade_name||c.name||'?').trim().slice(0,1).toUpperCase())}</span><div class="m"><div class="t">${esc(c.name)}${c.trade_name&&c.trade_name!==c.name?` <span class="muted small">· ${esc(c.trade_name)}</span>`:''}</div><div class="d">${esc([c.doc||'Sem documento',[c.city,c.state].filter(Boolean).join('/'),c.whatsapp||c.phone].filter(Boolean).join(' · '))}</div><div class="chips" style="margin-top:4px">${bad?`<span class="pill bad">${esc(c.status_rf)}</span>`:''}${st.obra?`<span class="pill k-obra">${st.obra} ${st.obra===1?'obra':'obras'}</span>`:''}${st.servico?`<span class="pill k-servico">${st.servico} ${st.servico===1?'serviço':'serviços'}</span>`:''}${st.venda?`<span class="pill k-venda">${st.venda} ${st.venda===1?'venda':'vendas'}</span>`:''}</div></div><div class="rt"><div class="a">${money(st.contracted)}</div><div class="d small muted">${st.receivable>0?'a receber '+money(st.receivable):'contratado'}</div></div></a>`}).join('');
+  if(!l.length)return `<p class="muted small" style="padding:12px 0">${D.clients.length?'Nenhum cliente encontrado com essa busca.':'Nenhum cliente cadastrado ainda.'}</p>`;
+  return `<table class="stack tlist"><thead><tr><th>Cliente</th><th>Documento</th><th>Cidade</th><th>Contato</th><th>Cadastros</th><th class="r">Contratado</th><th class="r">Ações</th></tr></thead><tbody>${l.map(c=>{const st=clientStats(c.id),k=c.kind||(onlyD(c.doc).length===11?'pf':'pj'),bad=c.status_rf&&!/ATIVA/i.test(c.status_rf)&&k==='pj';
+    return `<tr><td class="tl-main"><a href="#clientes-${c.id}" class="tl-name"><span class="cav ${k}">${esc((c.trade_name||c.name||'?').trim().slice(0,1).toUpperCase())}</span><span><small>${k==='pj'?'Empresa':'Pessoa física'}${c.trade_name&&c.trade_name!==c.name?' · '+esc(c.trade_name):''}</small><b>${esc(c.name)}</b></span></a>${bad?`<span class="pill bad">${esc(c.status_rf)}</span>`:''}</td>
+    <td>${esc(c.doc||'—')}</td><td>${esc([c.city,c.state].filter(Boolean).join('/')||'—')}</td><td>${esc(c.whatsapp||c.phone||c.email||'—')}</td>
+    <td><div class="chips">${st.obra?`<span class="pill k-obra">${st.obra} ${st.obra===1?'obra':'obras'}</span>`:''}${st.servico?`<span class="pill k-servico">${st.servico} ${st.servico===1?'serviço':'serviços'}</span>`:''}${st.venda?`<span class="pill k-venda">${st.venda} ${st.venda===1?'venda':'vendas'}</span>`:''}${!st.n?'<span class="muted small">Nenhum</span>':''}</div></td>
+    <td class="r"><div class="cell"><b>${money(st.contracted)}</b>${st.receivable>0?`<div class="small muted">a receber ${money(st.receivable)}</div>`:''}</div></td>
+    <td class="r tl-act" data-w><button type="button" class="icb" data-act="edit-client" data-id="${c.id}" aria-label="Editar ${esc(c.name)}" title="Editar">${ic('edit')}</button><button type="button" class="icb danger" data-act="del-client" data-id="${c.id}" aria-label="Excluir ${esc(c.name)}" title="Excluir">${ic('trash')}</button></td></tr>`}).join('')}</tbody></table>`;
 }
 function vClientes(){
   const pj=D.clients.filter(c=>(c.kind||(onlyD(c.doc).length===11?'pf':'pj'))==='pj').length;
   let h=`<div class="head"><div><h1>Clientes</h1><p class="sub">${D.clients.length} ${D.clients.length===1?'cliente':'clientes'}: ${pj} empresas e ${D.clients.length-pj} pessoas físicas</p></div><button class="btn dark" data-act="new-client" data-w>${ic('plus')} Novo cliente</button></div>`;
   if(!D.clients.length)return h+`<div class="card empty"><b>Nenhum cliente cadastrado</b><span>Digite o CNPJ ou CPF e o sistema preenche razão social, endereço e contato automaticamente.</span><button class="btn primary" data-act="new-client" data-w>${ic('plus')} Cadastrar primeiro cliente</button></div>`;
   h+=`<div class="row"><input type="search" id="cf-q" placeholder="Buscar por nome, CNPJ/CPF, cidade, telefone ou e-mail" value="${esc(CF.q)}" style="flex:1;min-width:200px"><div class="chips kfilter">${[['','Todos'],['pj','Empresas'],['pf','Pessoas físicas']].map(([k,l])=>`<button type="button" class="chip${CF.kind===k?' on':''}" data-act="cf-kind" data-id="${k}">${l}</button>`).join('')}</div></div>`;
-  return h+`<div class="card" style="padding:8px 16px"><div class="list" id="cl-list">${clientRows()}</div></div>`;
+  return h+`<div class="card tcard"><div class="scroll" id="cl-list">${clientRows()}</div></div>`;
 }
 function vClienteDet(id){
   const c=cli(id);if(!c)return `<div class="card empty"><b>Cliente não encontrado</b><a class="btn" href="#clientes">Voltar para Clientes</a></div>`;
@@ -1297,6 +1304,34 @@ function formReopen(pid){
   }});
 }
 
+function delProject(id){
+  const p=proj(id);if(!p)return;
+  const ne=D.expenses.filter(e=>e.project_id===id&&!e.deleted).length,nr=D.receipts.filter(r=>r.project_id===id&&!r.deleted).length,nv=D.events.filter(e=>e.project_id===id).length,nd=D.documents.filter(d=>d.project_id===id&&!d.deleted).length;
+  const txs=D.transactions.filter(t=>(t.allocations||[]).some(a=>a.project_id===id));
+  const has=ne+nr+nv+nd+txs.length>0,kn=KIND[kindOf(p)].n.toLowerCase();
+  modal({title:`Excluir ${kn}`,submit:'Excluir definitivamente',danger:true,body:`<p class="ink2"><b>${esc(p.code)} · ${esc(p.name)}</b></p>
+   ${has?`<p class="ink2">Junto ${kindOf(p)==='obra'?'com a obra':kindOf(p)==='venda'?'com a venda':'com o serviço'} serão apagados: ${[ne&&`${ne} ${ne===1?'despesa':'despesas'}`,nr&&`${nr} ${nr===1?'recebimento':'recebimentos'}`,nv&&`${nv} ${nv===1?'evento':'eventos'} do cronograma`,nd&&`${nd} ${nd===1?'documento':'documentos'}`].filter(Boolean).join(', ')||'nenhum lançamento'}.${txs.length?` ${txs.length} ${txs.length===1?'lançamento do extrato volta':'lançamentos do extrato voltam'} para "A classificar".`:''}</p>
+   <p class="small muted">Isto não pode ser desfeito. Se a ${kn} só não vai acontecer, prefira mudar o status para <b>Cancelada</b>: o histórico fica guardado.</p>
+   <label class="f" for="del-confirm">Para confirmar, digite o código <b>${esc(p.code)}</b><input type="text" id="del-confirm" name="confirm" autocomplete="off"></label>`:'<p class="small muted">Este cadastro não tem lançamentos. A exclusão não pode ser desfeita.</p>'}`,
+   onSubmit:async(f,msg)=>{
+    if(has&&(vals(f).confirm||'').trim().toUpperCase()!==String(p.code).toUpperCase()){msg('Digite o código exatamente como aparece acima.');return false}
+    for(const t of txs){
+      const keep=(t.allocations||[]).filter(a=>a.project_id!==id);
+      if(keep.length){
+        // lançamento dividido: desfaz tudo para reclassificar com segurança
+        for(const a of keep){if(a.expense_id){const e=D.expenses.find(x=>x.id===a.expense_id);if(e)await put('expenses',a.linked?(({bank_tx_id,...r})=>r)(e):{...e,deleted:true,deleted_at:Date.now()})}if(a.receipt_id){const r=D.receipts.find(x=>x.id===a.receipt_id);if(r)await put('receipts',a.linked?(({bank_tx_id,...o})=>o)(r):{...r,deleted:true,deleted_at:Date.now()})}}
+      }
+      await put('transactions',{...t,status:'pendente',allocations:[],classified_at:null});
+    }
+    if(!memory()){const {error}=await neon.from('projects').delete().eq('id',id);if(error)throw error}
+    for(const col of ['expenses','receipts','events','documents','audit'])D[col]=D[col].filter(x=>x.project_id!==id);
+    D.projects=D.projects.filter(x=>x.id!==id);
+    await log('obra','excluiu',null,`${KIND[kindOf(p)].n} excluída: ${p.name} (${p.code})${has?` com ${ne} despesas e ${nr} recebimentos`:''}`,id);
+    if(location.hash==='#obra-'+id)location.hash='obras';
+    schedule();toast(`${KIND[kindOf(p)].n} excluída.`);
+   }});
+}
+
 /* ---------- exportações ---------- */
 async function save(filename,data){
   try{const u=URL.createObjectURL(data instanceof Blob?data:new Blob([data]));const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),8000);toast('Arquivo gerado.')}
@@ -1377,6 +1412,7 @@ const ACT={
   'pdf':id=>exportPdf(id),'xlsx':id=>exportXlsx(id),'xlsx-all':()=>exportXlsx(),
   'tab':id=>{tab=id;render()},
   'new-kind':k=>formProject(null,k),
+  'del-project':id=>delProject(id),
   'pf-kind':k=>{PF.kind=k||'';render()},
   'fin-tab':t=>{FT=t;render()},
   'fin-import':()=>{const i=$('#ofx-in');if(i)i.click()},
@@ -1435,9 +1471,9 @@ document.addEventListener('input',e=>{
   const t=e.target;
   if(t.matches('[data-money]')){const d=t.value.replace(/\D/g,'').slice(0,13);t.value=d?money(+d/100):''}
   if(t.dataset.f==='q'){F.q=t.value;$('#elist').innerHTML=expBlock()}
-  if(t.dataset.pf==='q'){PF.q=t.value;$('#plist').innerHTML=projCards()}
+  if(t.dataset.pf==='q'){PF.q=t.value;const e=$('#plist');e.innerHTML=projCards();stackLabels(e)}
   if(t.dataset.progress)$('#progv').textContent=t.value+'%';
-  if(t.id==='cf-q'){CF.q=t.value;$('#cl-list').innerHTML=clientRows()}
+  if(t.id==='cf-q'){CF.q=t.value;const e=$('#cl-list');e.innerHTML=clientRows();stackLabels(e)}
   if(t.id==='fi-cl_doc'){const d=onlyD(t.value);if((d.length===14||d.length===11)&&docOk(d)&&t.dataset.auto!==d){t.dataset.auto=d;clLookup()}}
   if(t.id==='fin-q'){FS.q=t.value;const l=t.closest('#fin-panel')&&t.closest('#fin-panel').querySelector('#fdest-list');if(l)l.innerHTML=finDestList()}
   if(t.dataset.fin==='samount'){FS.splits[+t.dataset.i].amount=mval(t.value);const e=t.closest('#fin-panel')&&t.closest('#fin-panel').querySelector('#fin-sum');if(e)e.outerHTML=finSumHTML()}
@@ -1447,7 +1483,7 @@ document.addEventListener('change',async e=>{
   const t=e.target;
   try{
     if(t.dataset.f&&t.dataset.f!=='q'){F[t.dataset.f]=t.value;$('#elist').innerHTML=expBlock()}
-    if(t.dataset.pf==='status'){PF.status=t.value;$('#plist').innerHTML=projCards()}
+    if(t.dataset.pf==='status'){PF.status=t.value;const e=$('#plist');e.innerHTML=projCards();stackLabels(e)}
     if(t.dataset.progress){const p=proj(t.dataset.progress),pl=(p.progress_log||[]).filter(x=>x.d!==today());pl.push({d:today(),v:+t.value});await put('projects',{...p,progress:+t.value,progress_log:pl,updated_at:Date.now()});await log('cronograma','editou',p.id,`Percentual de execução atualizado para ${t.value}%`)}
     if(t.dataset.status){const p=proj(t.dataset.status),s=t.value;
       if(s==='concluida'){t.value=p.status;formFinalize(p.id);return}
