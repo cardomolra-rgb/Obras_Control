@@ -350,7 +350,7 @@ async function authSubmit(f){
 }
 
 /* --- financeiro --- */
-let FT='classificar',SEL=null,FS=null,FACC='',FTQ='',FMON='';
+let BT={value:0,missing:0,asOf:''},FT='classificar',SEL=null,FS=null,FACC='',FTQ='',FMON='';
 const DEF_CENTERS=['Administrativo','Pessoal','Frota','Impostos e taxas','Financeiro'];
 const DEF_CCATS=['Salários e encargos','Pró-labore','Aluguel','Energia e água','Telefonia e internet','Contabilidade','Combustível','Manutenção de veículos','Impostos','Tarifas bancárias','Material de escritório','Seguros','Outros'];
 const INC_CATS=['Rendimentos','Outras receitas','Aporte de sócio','Empréstimo'];
@@ -366,6 +366,22 @@ const txId=(accId,fit)=>'tx_'+h32(accId+'|'+fit,2166136261)+h32(fit+'|'+accId,37
 const pending=()=>D.transactions.filter(t=>t.status==='pendente'&&(!FACC||t.account_id===FACC)).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.amount-b.amount));
 const destLabel=a=>{if(a.kind==='projeto'){const p=proj(a.project_id);return p?`${p.code} · ${p.name}`:'Cadastro removido'}if(a.kind==='empresa')return `Empresa · ${a.center||''}`;return 'Transferência entre contas'};
 
+function accBal(a){
+  if(!a)return null;
+  const ts=D.transactions.filter(t=>t.account_id===a.id),last=ts.map(t=>t.date||'').sort().pop()||'';
+  if(a.balance==null||!a.balance_date)return {value:null,asOf:last,last};
+  const after=ts.filter(t=>t.date>a.balance_date);
+  return {value:Math.round((+a.balance+sum(after,t=>t.amount))*100)/100,asOf:last>a.balance_date?last:a.balance_date,base:+a.balance,baseDate:a.balance_date,source:a.balance_source||'banco',after:after.length,last};
+}
+function balTotal(list){const bs=list.map(accBal);const known=bs.filter(b=>b&&b.value!=null);return {value:sum(known,b=>b.value),missing:bs.length-known.length,asOf:known.map(b=>b.asOf).sort().pop()||''}}
+function balNote(b){if(!b||b.value==null)return 'Saldo não informado';return b.after?`Saldo do ${b.source==='manual'?'ajuste':'banco'} em ${fdate(b.baseDate)} + ${b.after} ${b.after===1?'lançamento':'lançamentos'} até ${fdate(b.asOf)}`:`${b.source==='manual'?'Ajustado':'Conforme extrato'} em ${fdate(b.baseDate)}`}
+function finAccBal(id){
+  const a=acc(id),b=accBal(a);
+  modal({title:'Ajustar saldo',submit:'Salvar saldo',body:`<p class="ink2">${esc(a.name)}</p><p class="small muted">Use quando o arquivo do banco não traz o saldo ou para corrigir uma diferença. Os lançamentos importados com data posterior são somados automaticamente.</p><div class="form">${fld('Saldo','bal',b&&b.value!=null?b.value:'',{type:'text',ph:'Ex.: 12.345,67 ou -500,00'})}${fld('Saldo no fim do dia','date',(b&&b.asOf)||today(),{type:'date'})}</div>`,
+   onSubmit:async(f,msg)=>{const v=vals(f),raw=String(v.bal||'').trim();if(!raw||!v.date){msg('Informe o saldo e a data.');return false}
+     const neg=/^-|-$|\(.*\)/.test(raw),num=Number(raw.replace(/[^\d,.]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'));if(!isFinite(num)){msg('Saldo inválido.');return false}
+     await put('accounts',{...a,balance:neg?-num:num,balance_date:v.date,balance_source:'manual'});toast('Saldo atualizado.')}});
+}
 function decodeOFX(buf){
   const head=new TextDecoder('latin1').decode(buf.slice(0,600));
   if(/CHARSET:\s*1252|ENCODING:\s*USASCII/i.test(head)&&!/encoding="utf-8"/i.test(head))return new TextDecoder('windows-1252').decode(buf);
@@ -398,7 +414,7 @@ async function finImport(files){
       let a=D.accounts.find(x=>x.key===key);
       if(!a){const fin=String(o.acctid||'').replace(/\D/g,'').slice(-4);a={id:'acc_'+h32(key,7)+h32(key,11),key,bank:o.bank||'',acctid:o.acctid||'',name:`Conta ${fin?'final '+fin:(D.accounts.length+1)}`,created_at:Date.now()}}
       const ds=o.txs.map(t=>t.date).sort();
-      if(o.bal!=null&&(!a.balance_date||(o.balDate||ds[ds.length-1])>=a.balance_date)){a={...a,balance:o.bal,balance_date:o.balDate||ds[ds.length-1]}}
+      if(o.bal!=null&&(!a.balance_date||(o.balDate||ds[ds.length-1])>=a.balance_date)){a={...a,balance:o.bal,balance_date:o.balDate||ds[ds.length-1],balance_source:'banco'}}
       a={...a,last_import:Date.now(),last_file:f.name};
       await put('accounts',a);
       // Considera só o que é novo: 1) mesmo código do banco (FITID) = já importado;
@@ -632,9 +648,8 @@ function vFin(){
   if(FT==='classificar'){
     const l=pending();
     if(!D.transactions.length)return h+`<div class="card empty"><b>Nenhum extrato importado</b><span>No site ou aplicativo do banco, exporte o extrato da conta no formato <b>OFX</b> (às vezes chamado de "Money" ou "arquivo para gerenciador financeiro") e importe aqui. Pode importar o mesmo período mais de uma vez: nada é duplicado.</span><button class="btn primary" data-act="fin-import" data-w>${ic('upload')} Importar extrato (OFX)</button>${isDemo()?'':'<button class="btn" data-act="demo-on">Ver com dados de demonstração</button>'}</div>`;
-    const out=sum(l.filter(t=>t.amount<0),t=>-t.amount),inn=sum(l.filter(t=>t.amount>0),t=>t.amount),bal=sum(D.accounts.filter(a=>!FACC||a.id===FACC),a=>+a.balance||0);
-    const lastDate=D.accounts.map(a=>a.balance_date||'').sort().pop();
-    h+=`<div class="grid g4">${kpi('A classificar',`${l.length}`,'Fora do resultado até classificar','tone-warn','doc')}${kpi('Saídas a classificar',money(out),`${l.filter(t=>t.amount<0).length} pagamentos`,'tone-neg','coin')}${kpi('Entradas a classificar',money(inn),`${l.filter(t=>t.amount>0).length} recebimentos`,'tone-pos','down')}${kpi('Saldo no banco',money(bal),lastDate?'Conforme extrato de '+fdate(lastDate):'Sem saldo no extrato','tone-info','bank')}</div>`;
+    const out=sum(l.filter(t=>t.amount<0),t=>-t.amount),inn=sum(l.filter(t=>t.amount>0),t=>t.amount),BT=balTotal(D.accounts.filter(a=>!FACC||a.id===FACC));
+    h+=`<div class="grid g4">${kpi('A classificar',`${l.length}`,'Fora do resultado até classificar','tone-warn','doc')}${kpi('Saídas a classificar',money(out),`${l.filter(t=>t.amount<0).length} pagamentos`,'tone-neg','coin')}${kpi('Entradas a classificar',money(inn),`${l.filter(t=>t.amount>0).length} recebimentos`,'tone-pos','down')}${kpi('Saldo no banco',BT.missing&&!BT.value?'—':money(BT.value),BT.missing?`${BT.missing} ${BT.missing===1?'conta sem saldo':'contas sem saldo'}: ajuste em Contas`:BT.asOf?'Atualizado até '+fdate(BT.asOf):'','tone-info','bank')}</div>`;
     if(!l.length)return h+`<div class="card empty"><b>Tudo classificado</b><span>Importe o próximo extrato quando quiser.</span></div>`;
     if(SEL&&!l.some(x=>x.id===SEL)){SEL=null;FS=null}
     if(!SEL&&innerWidth>820){const f=l[0];SEL=f.id;const keep=FS;FS=null;finSelectSilent(f.id)}
@@ -647,7 +662,7 @@ function vFin(){
   if(FT==='classificados')return h+`<div class="card"><div class="row" style="margin-bottom:8px"><input type="search" id="fin-txq" placeholder="Buscar por descrição ou destino" value="${esc(FTQ)}" style="flex:1"></div><div class="list" id="fin-done">${finDoneRows()}</div></div>`;
   if(FT==='resultado')return h+finResult();
   if(FT==='regras')return h+`<div class="card"><h2>Regras automáticas</h2><p class="small muted" style="margin-bottom:10px">Quando a descrição do extrato contém o texto, o sistema sugere o destino. Crie regras marcando a opção na hora de classificar.</p>${D.rules.length?`<div class="list">${D.rules.slice().sort((a,b)=>(a.match||'').localeCompare(b.match||'')).map(r=>`<div class="li"><div class="m"><div class="t">“${esc(r.match)}”</div><div class="d">${esc(r.kind==='transferencia'?'Transferência entre contas':r.kind==='empresa'?'Empresa · '+(r.center||''):(proj(r.project_id)?proj(r.project_id).code+' · '+proj(r.project_id).name:'Cadastro removido'))}${r.category?' · '+esc(r.category):''}</div></div><div class="acts" data-w><button class="icb" data-act="fin-del-rule" data-id="${r.id}" aria-label="Excluir regra">${ic('trash')}</button></div></div>`).join('')}</div>`:'<p class="muted small">Nenhuma regra ainda.</p>'}</div>`;
-  if(FT==='contas')return h+`<div class="card"><h2>Contas bancárias</h2><p class="small muted" style="margin-bottom:10px">As contas são criadas automaticamente na primeira importação do extrato de cada uma.</p>${D.accounts.length?`<div class="list">${D.accounts.map(a=>{const ts=D.transactions.filter(t=>t.account_id===a.id);return `<div class="li"><div class="m"><div class="t">${esc(a.name)}</div><div class="d">Banco ${esc(a.bank||'—')} · conta ${esc(a.acctid||'—')} · ${ts.length} lançamentos, ${ts.filter(t=>t.status==='pendente').length} a classificar${a.last_import?' · última importação '+fts(a.last_import):''}</div></div><div class="rt"><div class="a">${a.balance!=null?money(a.balance):'—'}</div><div class="d small muted">${a.balance_date?'saldo em '+fdate(a.balance_date):''}</div></div><div class="acts" data-w><button class="icb" data-act="fin-acc-edit" data-id="${a.id}" aria-label="Renomear conta">${ic('edit')}</button></div></div>`}).join('')}</div>`:'<p class="muted small">Nenhuma conta ainda. Importe um extrato.</p>'}</div>`;
+  if(FT==='contas')return h+`<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2 style="margin:0">Contas bancárias</h2>${D.accounts.length?`<span>Total: <b class="num">${money(balTotal(D.accounts).value)}</b></span>`:''}</div><p class="small muted" style="margin-bottom:10px">As contas são criadas na primeira importação. O saldo é atualizado a cada extrato: usa o saldo informado pelo banco e soma os lançamentos importados depois dele.</p>${D.accounts.length?`<div class="list">${D.accounts.map(a=>{const ts=D.transactions.filter(t=>t.account_id===a.id);return `<div class="li"><div class="m"><div class="t">${esc(a.name)}</div><div class="d">Banco ${esc(a.bank||'—')} · conta ${esc(a.acctid||'—')} · ${ts.length} lançamentos, ${ts.filter(t=>t.status==='pendente').length} a classificar${a.last_import?' · última importação '+fts(a.last_import):''}</div></div><div class="rt"><div class="a ${(accBal(a)||{}).value<0?'neg':''}">${(accBal(a)||{}).value!=null?money(accBal(a).value):'—'}</div><div class="d small muted" style="max-width:260px;text-align:right">${balNote(accBal(a))}</div></div><div class="acts" data-w><button class="btn" style="padding:5px 12px;min-height:0" data-act="fin-acc-bal" data-id="${a.id}">Ajustar saldo</button><button class="icb" data-act="fin-acc-edit" data-id="${a.id}" aria-label="Renomear conta">${ic('edit')}</button></div></div>`}).join('')}</div>`:'<p class="muted small">Nenhuma conta ainda. Importe um extrato.</p>'}</div>`;
   return h;
 }
 function finSelectSilent(id){const t=txOf(id);if(!t)return;const was=innerWidth;SEL=id;const s=suggest(t),p=s.project_id&&proj(s.project_id);
@@ -659,6 +674,7 @@ function vDash(){
   let h=`<div class="head"><div><h1>Dashboard</h1><p class="sub">Visão geral de todas as obras em ${fdate(today())}</p></div><button class="btn primary" data-act="new-expense" data-w>${ic('plus')} NOVA DESPESA</button></div>`;
   if(!T.n)return h+emptyStart();
   h+=`<div class="strip"><div class="st-ink"><b>${T.n}</b><span>Obras cadastradas</span></div><div class="st-acc"><b>${T.running}</b><span>Em andamento</span></div><div class="st-pos"><b>${T.done}</b><span>Concluídas</span></div><div class="${T.late?'st-neg':'st-mut'}"><b>${T.late}</b><span>Atrasadas</span></div></div>`;
+  if(D.accounts.length){const B=balTotal(D.accounts);h+=`<a class="card balbar" href="#financeiro"><span class="ki">${ic('bank')}</span><span class="m"><span class="small muted">Saldo nas contas bancárias${D.accounts.length>1?` (${D.accounts.length})`:''}</span><b class="${B.value<0?'neg':''}">${money(B.value)}</b></span><span class="small muted">${B.missing?`${B.missing} ${B.missing===1?'conta sem saldo informado':'contas sem saldo informado'}`:B.asOf?'Atualizado até '+fdate(B.asOf):''}${D.transactions.some(t=>t.status==='pendente')?` · ${D.transactions.filter(t=>t.status==='pendente').length} a classificar`:''}</span></a>`}
   const neg=T.profit<0,mneg=T.avgMargin!=null&&T.avgMargin<0;
   h+=`<div class="grid g3 kp">${kpi('Valor total contratado',money(T.contracted),'Obras aprovadas, em execução e concluídas','tone-info','doc')}${kpi('Total de despesas',money(T.expenses),'Sem estornos e exclusões','tone-neg','coin')}${kpi('Lucro bruto acumulado',money(T.profit),'Contratado menos custo. Não depende do que já foi recebido',`hl ${neg?'tone-neg':'tone-pos'}`,'build')}
    ${kpi('Total recebido',money(T.received),'Dinheiro que já entrou','tone-teal','down')}${kpi('Valores a receber',money(T.receivable),'Saldo dos contratos','tone-warn','cal')}${kpi('Margem de lucro média',pct(T.avgMargin),'Média das margens das obras contratadas',mneg?'tone-neg':'tone-pos','home')}</div>`;
@@ -1446,6 +1462,7 @@ const ACT={
   'fin-apply':()=>finApplyAll(),
   'fin-del-rule':id=>{confirmBox('Excluir regra','A regra deixa de sugerir destinos. Lançamentos já classificados não mudam.','Excluir',async()=>{await del('rules',id)})},
   'fin-acc-edit':id=>finAccEdit(id),
+  'fin-acc-bal':id=>finAccBal(id),
   'fin-month':()=>{},
   'del-center':c=>putSettings({...D.settings,centers:centers().filter(x=>x!==c)}).catch(e=>toast(errText(e))),
   'del-ccat':c=>putSettings({...D.settings,company_cats:companyCats().filter(x=>x!==c)}).catch(e=>toast(errText(e))),
