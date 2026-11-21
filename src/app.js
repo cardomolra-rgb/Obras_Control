@@ -422,8 +422,10 @@ async function finImport(files){
       let a=D.accounts.find(x=>x.key===key);
       if(!a){const fin=String(o.acctid||'').replace(/\D/g,'').slice(-4);a={id:'acc_'+h32(key,7)+h32(key,11),key,bank:o.bank||'',acctid:o.acctid||'',name:`Conta ${fin?'final '+fin:(D.accounts.length+1)}`,created_at:Date.now()}}
       const ds=o.txs.map(t=>t.date).sort();
-      // alguns bancos (ex.: Sicredi) informam a data do saldo no fim do mês; vale no máximo o dia da importação
-      const bd=[o.balDate||ds[ds.length-1],today()].sort()[0],cur=a.balance_date?[a.balance_date,today()].sort()[0]:'';
+      // O saldo do extrato é o saldo depois de TODOS os lançamentos do arquivo (o Sicredi, por exemplo, data
+      // lançamentos do fim de semana no próximo dia útil e informa a data do saldo no fim do mês).
+      // Por isso o saldo vale até o último lançamento do arquivo, ou até a data do banco, se ela for anterior.
+      const lastD=ds[ds.length-1],bd=o.balDate&&o.balDate<lastD?o.balDate:lastD,cur=a.balance_date||'';
       if(o.bal!=null&&(!cur||bd>=cur)){a={...a,balance:o.bal,balance_date:bd,balance_source:'banco',balance_file:f.name,balance_set_at:Date.now()}}
       a={...a,last_import:Date.now(),last_file:f.name};
       await put('accounts',a);
