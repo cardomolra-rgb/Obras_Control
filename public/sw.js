@@ -1,6 +1,6 @@
 // OBRA CONTROL: guarda a "casca" do aplicativo para abrir rápido e funcionar como app instalado.
 // Os dados (Neon) nunca são guardados aqui: sempre vêm do servidor.
-const CACHE = 'obra-control-v3';
+const CACHE = 'obra-control-v4';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
