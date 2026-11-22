@@ -23,6 +23,8 @@ const sum=(a,f=x=>x)=>a.reduce((s,x)=>s+(Number(f(x))||0),0);
 const days=n=>n==null?'—':n+(Math.abs(n)===1?' dia':' dias');
 const fts=ts=>{const d=new Date(ts);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes())};
 const I={
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+ moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
  bank:'<path d="M3 9l9-5 9 5M5 9v9M19 9v9M9 9v9M15 9v9M3 20h18"/>',
  upload:'<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
  split:'<path d="M6 3v6a6 6 0 0 0 6 6 6 6 0 0 1 6 6M18 3v6"/>',
@@ -66,6 +68,13 @@ const PCOL=[
 const hashStr=t=>{let h=0;for(const ch of String(t||''))h=(h*31+ch.charCodeAt(0))>>>0;return h};
 const pcol=p=>PCOL.find(c=>c.k===(p&&p.color))||PCOL[hashStr(p&&p.id)%PCOL.length];
 const dot=p=>`<i class="pdot" style="background:${pcol(p).fg}"></i>`;
+/* ---------- tema claro / escuro ---------- */
+const themePref=()=>{try{return localStorage.getItem('oc-theme')||'claro'}catch(e){return 'claro'}};
+const isDark=()=>document.documentElement.dataset.theme==='dark';
+function applyTheme(){const p=themePref(),dark=location.pathname.startsWith('/acompanhar')?false:(p==='escuro'||(p==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches));document.documentElement.dataset.theme=dark?'dark':'light';const m=document.querySelector('meta[name=theme-color]');if(m)m.content=dark?'#141213':'#231F20'}
+function setTheme(p){try{localStorage.setItem('oc-theme',p)}catch(e){}applyTheme();render()}
+try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(themePref()==='auto'){applyTheme();render()}})}catch(e){}
+applyTheme();
 const CHART_COLORS=['#F15623','#231F20','#FDB813','#939598','#C44018','#58595B','#FEC75A','#F4804D'];
 const DATA_URL=(()=>{try{const u=new URL(NEON_URL);const l=u.hostname.split('.');return `${u.protocol}//${[l[0],'apirest',...l.slice(1)].join('.')}${u.pathname.replace(/\/+$/,'')}/rest/v1`}catch(e){return ''}})();
 const shareUrl=t=>`${location.origin}/acompanhar/${t}`;
@@ -285,6 +294,7 @@ function render(){
   $('#side').innerHTML=`<div class="brand mbrand"><img class="logo" src="/brand/moura-logo-horizontal-negativa.svg" alt="Moura Soluções Elétricas" width="190" height="59"><span class="appname">Obra Control</span></div>
    <button class="btn primary big" data-act="new-expense" data-w>${ic('plus')} NOVA DESPESA</button>
    <nav class="nav">${NAV.map(([k,l,i])=>k[0]==='@'?`<button data-act="${k.slice(1)}" data-w>${ic(i)}${l}</button>`:`<a href="#${k}"${on(k)}>${ic(i)}${l}</a>`).join('')}</nav>
+   <button class="btn ghost thm" data-act="theme-toggle" aria-label="${isDark()?'Ativar modo claro':'Ativar modo escuro'}">${ic(isDark()?'sun':'moon')} ${isDark()?'Modo claro':'Modo escuro'}</button>
    ${standalone()?'':`<button class="btn" data-act="install" style="margin:0 6px">${ic('down')} Instalar aplicativo</button>`}<div class="foot">${esc(D.settings.company||'')}${isDemo()?'<br>Modo demonstração':''}${me?`<div class="who">${esc(me.email||'')}</div><button class="btn ghost" style="padding:4px 0;min-height:0" data-act="logout">Sair da conta</button>`:''}</div>`;
   $('#bnav').innerHTML=`<a href="#dashboard"${on('dashboard')}>${ic('home')}Início</a><a href="#obras"${on('obras')}>${ic('build')}Obras</a><button class="plus" data-act="new-expense" data-w aria-label="Nova despesa">${ic('plus')}</button><a href="#despesas"${on('despesas')}>${ic('coin')}Despesas</a><button data-act="more">${ic('more')}Mais</button>`;
   $('#topinfo').textContent=isDemo()?'Demonstração':(D.settings.company||'');
@@ -709,20 +719,21 @@ function drawCharts(){
   Chart.defaults.font.family=css('--body');Chart.defaults.font.size=12;Chart.defaults.color=M;Chart.defaults.animation=false;
   const T=totals();
   const tip={callbacks:{label:c=>' '+(c.dataset.label?c.dataset.label+': ':'')+money(c.parsed.x!=null&&c.chart.options.indexAxis==='y'?c.parsed.x:c.parsed.y)}};
-  const ax={grid:{color:'#F0F1F4'},border:{display:false},ticks:{callback:v=>v>=1000?(v/1000).toLocaleString('pt-BR')+' mil':v}};
+  const GRID=css('--line-2')||'#F0F1F4',INKC=css('--ink')||'#231F20',CC=CHART_COLORS.map(c=>c==='#231F20'?INKC:c);
+  const ax={grid:{color:GRID},border:{display:false},ticks:{callback:v=>v>=1000?(v/1000).toLocaleString('pt-BR')+' mil':v}};
   const nog={grid:{display:false},border:{display:false}};
   const mk=(id,cfg)=>charts.push(new Chart($(id),cfg));
   const cat={};for(const e of D.expenses)if(!e.deleted&&e.status!=='estornada')cat[e.category]=(cat[e.category]||0)+(+e.amount||0);
   const ce=Object.entries(cat).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  mk('#ch-cat',{type:'bar',data:{labels:ce.map(x=>x[0]),datasets:[{data:ce.map(x=>x[1]),backgroundColor:ce.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:6,barThickness:14}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:tip},scales:{x:ax,y:nog}}});
+  mk('#ch-cat',{type:'bar',data:{labels:ce.map(x=>x[0]),datasets:[{data:ce.map(x=>x[1]),backgroundColor:ce.map((_,i)=>CC[i%CC.length]),borderRadius:6,barThickness:14}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:tip},scales:{x:ax,y:nog}}});
   const now=new Date(),ms=[];for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);ms.push(d.getFullYear()+'-'+pad(d.getMonth()+1))}
   const mv=ms.map(m=>sum(D.expenses.filter(e=>!e.deleted&&e.status!=='estornada'&&(e.date||'').startsWith(m)),e=>e.amount));
   mk('#ch-month',{type:'line',data:{labels:ms.map(m=>m.slice(5)+'/'+m.slice(2,4)),datasets:[{data:mv,borderColor:NEG,backgroundColor:'rgba(216,58,58,.10)',fill:true,tension:.3,pointRadius:mv.map((_,i)=>i===11?4:0),pointBackgroundColor:NEG,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:tip},scales:{y:{...ax,beginAtZero:true},x:nog}}});
   const ps=T.ps.filter(x=>x.c.counted||x.c.cost>0),lb=ps.map(x=>x.p.code),ttl={title:i=>ps[i[0].dataIndex].p.name};
-  mk('#ch-cmp',{type:'bar',data:{labels:lb,datasets:[{label:'Contratado',data:ps.map(x=>x.c.contracted),backgroundColor:'#231F20',borderRadius:5},{label:'Custo',data:ps.map(x=>x.c.cost),backgroundColor:NEG,borderRadius:5},{label:'Recebido',data:ps.map(x=>x.c.received),backgroundColor:POS,borderRadius:5}]},options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}},tooltip:{callbacks:{...tip.callbacks,...ttl}}},scales:{y:{...ax,beginAtZero:true},x:nog}}});
+  mk('#ch-cmp',{type:'bar',data:{labels:lb,datasets:[{label:'Contratado',data:ps.map(x=>x.c.contracted),backgroundColor:INKC,borderRadius:5},{label:'Custo',data:ps.map(x=>x.c.cost),backgroundColor:NEG,borderRadius:5},{label:'Recebido',data:ps.map(x=>x.c.received),backgroundColor:POS,borderRadius:5}]},options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}},tooltip:{callbacks:{...tip.callbacks,...ttl}}},scales:{y:{...ax,beginAtZero:true},x:nog}}});
   mk('#ch-proj',{type:'bar',data:{labels:lb,datasets:[{data:ps.map(x=>x.c.cost),backgroundColor:ps.map(x=>pcol(x.p).fg),borderColor:ps.map(x=>x.c.overCost?NEG:'transparent'),borderWidth:ps.map(x=>x.c.overCost?2:0),borderRadius:6,barThickness:14}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{...tip.callbacks,...ttl}}},scales:{x:{...ax,beginAtZero:true},y:nog}}});
   const rs=ps.filter(x=>x.c.margin!=null);
-  mk('#ch-rent',{type:'bar',data:{labels:rs.map(x=>x.p.code),datasets:[{data:rs.map(x=>+x.c.margin.toFixed(1)),backgroundColor:rs.map(x=>x.c.margin<0?NEG:POS),borderRadius:6}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>rs[i[0].dataIndex].p.name,label:c=>` Margem: ${pct(c.parsed.y)} · Lucro: ${money(rs[c.dataIndex].c.profit)}`}}},scales:{y:{grid:{color:'#F0F1F4'},border:{display:false},ticks:{callback:v=>v+'%'}},x:nog}}});
+  mk('#ch-rent',{type:'bar',data:{labels:rs.map(x=>x.p.code),datasets:[{data:rs.map(x=>+x.c.margin.toFixed(1)),backgroundColor:rs.map(x=>x.c.margin<0?NEG:POS),borderRadius:6}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>rs[i[0].dataIndex].p.name,label:c=>` Margem: ${pct(c.parsed.y)} · Lucro: ${money(rs[c.dataIndex].c.profit)}`}}},scales:{y:{grid:{color:GRID},border:{display:false},ticks:{callback:v=>v+'%'}},x:nog}}});
 }
 
 /* --- obras --- */
@@ -827,6 +838,7 @@ function vConf(){
   return `<div class="head"><div><h1>Configurações</h1></div></div>
   <div class="grid g2">
    <div class="card"><h2>Empresa</h2><form data-form="company" class="form">${fld('Nome da empresa','company',D.settings.company,{full:true})}${fld('CNPJ ou CPF','company_doc',D.settings.company_doc)}${fld('Telefone','company_phone',D.settings.company_phone,{type:'tel'})}${fld('Endereço','company_address',D.settings.company_address,{full:true})}${fld('Responsável técnico','company_resp',D.settings.company_resp,{full:true,ph:'Nome e registro profissional, ex.: CREA'})}<div class="full row" style="justify-content:space-between"><p class="small muted">Aparece nos relatórios, no termo de conclusão e na página do cliente.</p><button class="btn dark" data-w>Salvar</button></div></form></div>
+   <div class="card"><h2>Aparência</h2><p class="ink2 small" style="margin-bottom:12px">Escolha como o OBRA CONTROL aparece neste aparelho. No automático, ele segue o modo claro ou escuro do celular ou computador.</p><div class="seg2" role="group" aria-label="Aparência">${[['claro','Claro'],['escuro','Escuro'],['auto','Automático']].map(([k,l])=>`<button type="button" class="${themePref()===k?'on':''}" aria-pressed="${themePref()===k}" data-act="theme-set" data-id="${k}">${l}</button>`).join('')}</div></div>
    <div class="card"><h2>Aplicativo</h2><p class="ink2 small" style="margin-bottom:12px">${standalone()?'Você está usando o aplicativo instalado.':'Instale o OBRA CONTROL no celular ou no computador. Ele abre em tela própria, com ícone, e usa a mesma conta e os mesmos dados.'}</p>${standalone()?'':`<button class="btn dark" data-act="install">${ic('down')} Instalar aplicativo</button>`}</div>
    <div class="card"><h2>Demonstração</h2><p class="ink2 small" style="margin-bottom:12px">Carrega obras fictícias para conhecer o aplicativo. Os dados de demonstração ficam só na tela, nunca se misturam com os seus e somem ao sair.</p>${isDemo()?`<button class="btn" data-act="demo-off">Sair da demonstração</button>`:`<button class="btn" data-act="demo-on">Abrir modo demonstração</button>`}</div>
    <div class="card"><h2>Financeiro da empresa</h2><p class="small muted" style="margin-bottom:10px">Centros e categorias para os custos que não pertencem a uma obra, serviço ou venda.</p>
@@ -1488,7 +1500,9 @@ const ACT={
   'ftog':(id,el)=>{FOPEN=!FOPEN;el.closest('.filters').classList.toggle('open',FOPEN)},
   'demo-on':()=>{DEMO=demoData();D=DEMO;location.hash='dashboard';render()},
   'demo-off':()=>{D=LIVE;DEMO=null;location.hash='dashboard';render()},
-  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#clientes" data-act="close">${ic('user')}Clientes</a><a href="#financeiro" data-act="close">${ic('bank')}Financeiro</a><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
+  'theme-toggle':()=>{if(!M.hidden)closeModal();setTheme(isDark()?'claro':'escuro')},
+  'theme-set':k=>setTheme(k),
+  'more':()=>modal({title:'Mais',cancel:'',body:`<nav class="nav"><button data-act="new-project" data-w>${ic('plus')}Nova Obra</button><a href="#clientes" data-act="close">${ic('user')}Clientes</a><a href="#financeiro" data-act="close">${ic('bank')}Financeiro</a><a href="#cronograma" data-act="close">${ic('cal')}Cronograma</a><a href="#relatorios" data-act="close">${ic('doc')}Relatórios</a><a href="#configuracoes" data-act="close">${ic('gear')}Configurações</a><button data-act="theme-toggle">${ic(isDark()?'sun':'moon')}${isDark()?'Modo claro':'Modo escuro'}</button>${standalone()?'':`<button data-act="install">${ic('down')}Instalar aplicativo</button>`}${me?`<button data-act="logout">${ic('x')}Sair da conta</button>`:''}</nav>`}),
   'new-client':()=>formClient(),'edit-client':id=>formClient(id),
   'cl-lookup':()=>clLookup(),
   'cf-kind':k=>{CF.kind=k||'';render()},
